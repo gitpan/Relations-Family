@@ -18,11 +18,11 @@ WriteMakefile(
     'Relations::Abstract' => 0.94
   },
   'PM' => {
-     'Family.pm' => '$(INST_LIBDIR)/Family.pm',
-     'Family/Member.pm' => '$(INST_LIBDIR)/Family/Member.pm',
+     'Family.pm'         => '$(INST_LIBDIR)/Family.pm',
+     'Family/Member.pm'  => '$(INST_LIBDIR)/Family/Member.pm',
      'Family/Lineage.pm' => '$(INST_LIBDIR)/Family/Lineage.pm',
      'Family/Rivalry.pm' => '$(INST_LIBDIR)/Family/Rivalry.pm',
-     'Family/Value.pm' => '$(INST_LIBDIR)/Family/Value.pm'
+     'Family/Value.pm'   => '$(INST_LIBDIR)/Family/Value.pm'
   }
 );
 

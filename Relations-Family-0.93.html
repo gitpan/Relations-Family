@@ -74,6 +74,12 @@
 		<LI><A HREF="#examples">Examples</A></LI>
 	</UL>
 
+	<LI><A HREF="#change log">CHANGE LOG</A></LI>
+	<UL>
+
+		<LI><A HREF="#relationsfamily0.93">Relations-Family-0.93</A></LI>
+	</UL>
+
 	<LI><A HREF="#other related work">OTHER RELATED WORK</A></LI>
 	<UL>
 
@@ -298,19 +304,14 @@ ignores any other arguments after the {}'s.</P>
 <P>
 <H2><A NAME="query arguments">QUERY ARGUMENTS</A></H2>
 <P>Some of the Relations functions recognize an argument named query. This
-argument can either be a string, hash or Relations::Query object.</P>
+argument can either be a hash or a Relations::Query object.</P>
 <P>The following calls are all equivalent for $object-&gt;function($query).</P>
-<PRE>
-  $object-&gt;function(&quot;select nothing from void&quot;);</PRE>
 <PRE>
   $object-&gt;function({select =&gt; 'nothing',
                      from   =&gt; 'void'});</PRE>
 <PRE>
   $object-&gt;function(Relations::Query-&gt;new(-select =&gt; 'nothing',
                                           -from   =&gt; 'void'));</PRE>
-<P>Since whatever query value is sent to Relations::Query's <CODE>to_string()</CODE> 
-function, consult the <CODE>to_string()</CODE> function in the Relations::Query 
-documentation for (just a little really) more information.</P>
 <P>
 <HR>
 <H1><A NAME="list of relations::family functions">LIST OF RELATIONS::FAMILY FUNCTIONS</A></H1>
@@ -373,7 +374,9 @@ query must select two fields, 1) the id of the member, labeled
 field is what identifies one record from another in a way that is
 understandable to the database. The id field is usually the primary 
 key. The label field is used to distinguish one record from another 
-in a way that is understandable to the user.</P>
+in a way that is understandable to the user. If a Relations::Query
+object is sent (see Query Arguments above), the object is cloned
+so the orginal is not modified.</P>
 <P>
 <H2><A NAME="add_lineage">add_lineage</A></H2>
 <PRE>
@@ -1217,6 +1220,22 @@ in finder.
 <PRE>
   Sold: 15
   Product: Copy Machine</PRE>
+<P>
+<HR>
+<H1><A NAME="change log">CHANGE LOG</A></H1>
+<P>
+<H2><A NAME="relationsfamily0.93">Relations-Family-0.93</A></H2>
+<P><STRONG>Add Member Query Cloning</STRONG></P>
+<P>If a Relations::Query object is sent to the <CODE>add_member()</CODE> function 
+through $query, that query is now cloned so Relations-Family won't
+muck with the original.</P>
+<P><STRONG>Query Argument Functionality</STRONG></P>
+<P>Originally, the help files said that any function requiring a $query
+argument could take a Relations::Query argument, a hash, or a string.
+This isn't true (even before the above changes). The functions 
+require a hash of query pieces (keyed with select, from, etc.) or a
+Relations::Query object. This is because Relations::Family builds on 
+the query and needs the pieces separated to do this.</P>
 <P>
 <HR>
 <H1><A NAME="other related work">OTHER RELATED WORK</A></H1>

@@ -26,7 +26,7 @@ use Relations::Family::Value;
 # This program is free software, you can redistribute it and/or modify it under
 # the same terms as Perl istelf
 
-$Relations::Family::VERSION = '0.92';
+$Relations::Family::VERSION = '0.93';
 
 @ISA = qw(Exporter);
 
@@ -141,11 +141,35 @@ sub add_member {
   return $self->{abstract}->report_error("add_member failed: Dupe label: $label\n") 
     if $self->{labels}->{$label};
 
-  # If they sent a hash for the query and they didn't
-  # send a member to use, create a query object using
-  # the hash they sent.
+  # If they didn't send a member, then they should 
+  # have sent a query. 
 
-  $query = new Relations::Query($query) if ((ref($query) eq 'HASH') && !$member);
+  if (!$member) {
+
+    # Give the user an error message if they didn't
+    # send a query argument.
+
+    return $self->{abstract}->report_error("add_member failed: No query or member sent\n") 
+      unless $query;
+
+    # If the query's a hash. 
+
+    if (ref($query) eq 'HASH') {
+
+      # Convert it to a Relations::Query object. 
+
+      $query = new Relations::Query($query);
+
+    } else {
+
+      # Assume it's a Relations::Query object and
+      # clone it so we don't mess with the original. 
+
+      $query = $query->clone();
+
+    }
+
+  }
 
   # Unless the word distinct is the first part of the
   # select clause of the query, make it so.
@@ -2166,11 +2190,9 @@ ignores any other arguments after the {}'s.
 =head2 QUERY ARGUMENTS
 
 Some of the Relations functions recognize an argument named query. This
-argument can either be a string, hash or Relations::Query object. 
+argument can either be a hash or a Relations::Query object. 
 
 The following calls are all equivalent for $object->function($query).
-
-  $object->function("select nothing from void");
 
   $object->function({select => 'nothing',
                      from   => 'void'});
@@ -2178,10 +2200,6 @@ The following calls are all equivalent for $object->function($query).
   $object->function(Relations::Query->new(-select => 'nothing',
                                           -from   => 'void'));
 
-
-Since whatever query value is sent to Relations::Query's to_string() 
-function, consult the to_string() function in the Relations::Query 
-documentation for (just a little really) more information.
 
 =head1 LIST OF RELATIONS::FAMILY FUNCTIONS
 
@@ -2250,7 +2268,9 @@ query must select two fields, 1) the id of the member, labeled
 field is what identifies one record from another in a way that is
 understandable to the database. The id field is usually the primary 
 key. The label field is used to distinguish one record from another 
-in a way that is understandable to the user. 
+in a way that is understandable to the user. If a Relations::Query
+object is sent (see Query Arguments above), the object is cloned
+so the orginal is not modified.
 
 =head2 add_lineage
 
@@ -3232,6 +3252,25 @@ in finder.
 
   Sold: 15
   Product: Copy Machine
+
+=head1 CHANGE LOG
+
+=head2 Relations-Family-0.93
+
+B<Add Member Query Cloning>
+
+If a Relations::Query object is sent to the add_member() function 
+through $query, that query is now cloned so Relations-Family won't
+muck with the original. 
+
+B<Query Argument Functionality>
+
+Originally, the help files said that any function requiring a $query
+argument could take a Relations::Query argument, a hash, or a string.
+This isn't true (even before the above changes). The functions 
+require a hash of query pieces (keyed with select, from, etc.) or a
+Relations::Query object. This is because Relations::Family builds on 
+the query and needs the pieces separated to do this.
 
 =head1 OTHER RELATED WORK
 

@@ -18,7 +18,7 @@ use Relations;
 # This program is free software, you can redistribute it and/or modify it under
 # the same terms as Perl istelf
 
-$Relations::Family::Member::VERSION = '0.92';
+$Relations::Family::Member::VERSION = '0.93';
 
 @ISA = qw(Exporter);
 

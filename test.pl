@@ -86,6 +86,14 @@ die "Member create failed alias" unless (($mem->{name} eq 'rand')  and
                                          ($mem->{query}->get() eq $query_one) and 
                                          ($mem->{alias} eq 'mooky'));
 
+$qry = new Relations::Query(-select   => {'fife' => 'barney'},
+                            -from     => {'green_teeth' => 'moogoo'},
+                            -where    => "flotsam>jetsam",
+                            -group_by => "denali",
+                            -having   => {'fortune' => 'cookie'},
+                            -order_by => ['was','is','will'],
+                            -limit    => '1');
+
 $mem = new Relations::Family::Member(-name     => 'rand',
                                      -label    => 'Random Thoughts',
                                      -database => 'mindtrip',
@@ -143,15 +151,43 @@ $fam->add_member(-name     => 'donkey',
                  -id_field => 'freak_id',
                  -query    => $qry);
 
+$query_dis = "select distinct barney as fife " . 
+             "from moogoo as green_teeth ".
+             "where flotsam>jetsam " .
+             "group by denali " .
+             "having fortune=cookie " .
+             "order by was,is,will ".
+             "limit 1";
+    
 die "Regular add member failed" unless (($fam->{members}->[1]->{name} eq 'donkey') and
                                         ($fam->{members}->[1]->{label} eq 'Donkey Biter') and
                                         ($fam->{members}->[1]->{database} eq 'dweebas') and
                                         ($fam->{members}->[1]->{table} eq 'donkeys_damnit') and
                                         ($fam->{members}->[1]->{id_field} eq 'freak_id') and
-                                        ($fam->{members}->[1]->{query} == $qry) and
+                                        ($fam->{members}->[1]->{query}->get() eq $query_dis) and
                                         ($fam->{names}->{'donkey'} == $fam->{members}->[1]) and
                                         ($fam->{labels}->{'Donkey Biter'} == $fam->{members}->[1]) and
                                         ($fam->{members}->[1]->{alias} eq 'donkeys_damnit'));
+
+$qry->add(-select => 'yayaya');
+
+die "Copied add member failed" unless (($fam->{members}->[1]->{name} eq 'donkey') and
+                                        ($fam->{members}->[1]->{label} eq 'Donkey Biter') and
+                                        ($fam->{members}->[1]->{database} eq 'dweebas') and
+                                        ($fam->{members}->[1]->{table} eq 'donkeys_damnit') and
+                                        ($fam->{members}->[1]->{id_field} eq 'freak_id') and
+                                        ($fam->{members}->[1]->{query}->get() eq $query_dis) and
+                                        ($fam->{names}->{'donkey'} == $fam->{members}->[1]) and
+                                        ($fam->{labels}->{'Donkey Biter'} == $fam->{members}->[1]) and
+                                        ($fam->{members}->[1]->{alias} eq 'donkeys_damnit'));
+
+$qry = new Relations::Query(-select   => {'fife' => 'barney'},
+                            -from     => {'green_teeth' => 'moogoo'},
+                            -where    => "flotsam>jetsam",
+                            -group_by => "denali",
+                            -having   => {'fortune' => 'cookie'},
+                            -order_by => ['was','is','will'],
+                            -limit    => '1');
 
 $fam->add_member(-name     => 'vb',
                  -label    => 'Venga Boyz',
