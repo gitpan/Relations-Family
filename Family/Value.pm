@@ -1,6 +1,6 @@
 # This is a component of a DBI/DBD-MySQL Relational Query Engine module. 
 
-package Relations::Family::Lineage;
+package Relations::Family::Value;
 require Exporter;
 require DBI;
 require 5.004;
@@ -18,7 +18,7 @@ use Relations;
 # This program is free software, you can redistribute it and/or modify it under
 # the same terms as Perl istelf
 
-$Relations::Family::Lineage::VERSION = '0.92';
+$Relations::Family::Value::VERSION = '0.92';
 
 @ISA = qw(Exporter);
 
@@ -34,10 +34,9 @@ use strict;
 
 
 
-### Create a Relations::Family::Lineage object. This object 
-### holds a one-to-many relationship between two tables.
-### This is when the one table (parent) is used a lookup 
-### for a field in the many table (child).
+### Create a Relations::Family::Value object. This object 
+### holds sql value and which members are needed to 
+## create this value.
 
 sub new {
 
@@ -47,18 +46,15 @@ sub new {
 
   # Get all the arguments passed
 
-  my ($parent_member,
-      $parent_field,
-      $child_member,
-      $child_field) = rearrange(['PARENT_MEMBER',
-                                 'PARENT_FIELD',
-                                 'CHILD_MEMBER',
-                                 'CHILD_FIELD'],@_);
+  my ($name,
+      $sql,
+      $members) = rearrange(['NAME',
+                             'SQL',
+                             'MEMBERS'],@_);
 
-  # $parent_member - Parent family member (one)
-  # $parent_field  - Parent member field used as a foreign key
-  # $child_member  - Child family member (many)
-  # $child_field   - Child member field using the foreign key
+  # $name - The name in the query of this value
+  # $sql  - The SQL field/equation of this value
+  # $members  - Members that hold this value 
 
   # Create the hash to hold all the vars
   # for this object.
@@ -72,10 +68,9 @@ sub new {
 
   # Add the info into the hash
 
-  $self->{parent_member} = $parent_member;
-  $self->{parent_field} = $parent_field;
-  $self->{child_member} = $child_member;
-  $self->{child_field} = $child_field;
+  $self->{name} = $name;
+  $self->{sql} = $sql;
+  $self->{members} = $members;
 
   # Give thyself
 
@@ -85,7 +80,7 @@ sub new {
 
 
 
-### Returns text info about the Relations::Family::Lineage 
+### Returns text info about the Relations::Family::Value 
 ### object. Useful for debugging and export purposes.
 
 sub to_text {
@@ -111,16 +106,18 @@ sub to_text {
 
   # 411
 
-  $text .= $indent . "Relations::Family::Lineage - $self\n";
-  $text .= $indent . "Parent Label: $self->{parent_member}->{label} ";
-  $text .= $indent . "Name: $self->{parent_member}->{name} ";
-  $text .= $indent . "Member: $self->{parent_member}\n";
-  $text .= $indent . "Parent Field: $self->{parent_field}\n";
+  $text .= $indent . "Relations::Family::Value: $self\n\n";
+  $text .= $indent . "Name: $self->{name}\n";
+  $text .= $indent . "SQL:  $self->{sql}\n";
+  $text .= $indent . "Members:\n";
+  
+  foreach my $member (@{$self->{members}}) {
 
-  $text .= $indent . "Child Label: $self->{child_member}->{label} ";
-  $text .= $indent . "Name: $self->{child_member}->{name} ";
-  $text .= $indent . "Member: $self->{child_member}\n";
-  $text .= $indent . "Child Field: $self->{child_field}\n";
+    $text .= $subindent . "Label: $member->{label} ";
+    $text .= $subindent . "Name: $member->{name} ";
+    $text .= $subindent . "Member: $member\n";
+
+  }
 
   $text .= "\n";
 
@@ -130,4 +127,4 @@ sub to_text {
 
 }
 
-$Relations::Family::Lineage::VERSION;
+$Relations::Family::Value::VERSION;

@@ -4,9 +4,9 @@ package Relations::Family::Member;
 require Exporter;
 require DBI;
 require 5.004;
+require Relations;
 
 use Relations;
-use Relations::Query;
 
 # You can run this file through either pod2man or pod2html to produce pretty
 # documentation in manual or html file format (these utilities are part of the
@@ -18,15 +18,13 @@ use Relations::Query;
 # This program is free software, you can redistribute it and/or modify it under
 # the same terms as Perl istelf
 
-$Relations::Family::Member::VERSION = '0.91';
+$Relations::Family::Member::VERSION = '0.92';
 
 @ISA = qw(Exporter);
 
 @EXPORT    = ();		
 
-@EXPORT_OK = qw(
-                new
-               );
+@EXPORT_OK = qw(new);
 
 %EXPORT_TAGS = ();
 
@@ -34,8 +32,10 @@ $Relations::Family::Member::VERSION = '0.91';
 
 use strict;
 
-# Create a Relations::Family::Member object. This
-# object is a list of values to select from.
+
+
+### Create a Relations::Family::Member object. This
+### object is a list of values to select from.
 
 sub new {
 
@@ -50,12 +50,14 @@ sub new {
       $database,
       $table,
       $id_field,
-      $query) = rearrange(['NAME',
+      $query,
+      $alias) = rearrange(['NAME',
                            'LABEL',
                            'DATABASE',
                            'TABLE',
                            'ID_FIELD',
-                           'QUERY'],@_);
+                           'QUERY',
+                           'ALIAS'],@_);
 
   # Create the hash to hold all the vars
   # for this object.
@@ -75,52 +77,36 @@ sub new {
   $self->{table} = $table;
   $self->{id_field} = $id_field;
   $self->{query} = $query;
+  $self->{alias} = $alias ? $alias : "$self->{table}";
 
   # Intialize relationships
 
-  my @parents = ();
-  my @children = ();
-  my @brothers = ();
-  my @sisters = ();
-
-  $self->{parents_ref} = \@parents;
-  $self->{children_ref} = \@children;
-  $self->{brothers_ref} = \@brothers;
-  $self->{sisters_ref} = \@sisters;
+  $self->{parents} = to_array();
+  $self->{children} = to_array();
+  $self->{brothers} = to_array();
+  $self->{sisters} = to_array();
 
   # Initialize chosen ids and labels
 
-  my @chosen_ids_array = ();
-  my @chosen_ids_select = ();
-  my @chosen_labels_array = ();
-  my %chosen_labels_hash = ();
-  my %chosen_labels_select = ();
-
   $self->{chosen_count} = 0;
   $self->{chosen_ids_string} = '';
-  $self->{chosen_ids_arrayref} = \@chosen_ids_array;
-  $self->{chosen_ids_selectref} = \@chosen_ids_select;
+  $self->{chosen_ids_array} = to_array();
+  $self->{chosen_ids_select} = to_array();
 
   $self->{chosen_labels_string} = '';
-  $self->{chosen_labels_arrayref} = \@chosen_labels_array;
-  $self->{chosen_labels_hashref} = \%chosen_labels_hash;
-  $self->{chosen_labels_selectref} = \%chosen_labels_select;
+  $self->{chosen_labels_array} = to_array();
+  $self->{chosen_labels_hash} = to_hash();
+  $self->{chosen_labels_select} = to_hash();
 
   # Initialize available ids and labels
 
-  my @available_ids_array = ();
-  my @available_ids_select = ();
-  my @available_labels_array = ();
-  my %available_labels_hash = ();
-  my %available_labels_select = ();
-
   $self->{available_count} = 0;
-  $self->{available_ids_arrayref} = \@available_ids_array;
-  $self->{available_ids_selectref} = \@available_ids_select;
+  $self->{available_ids_array} = to_array();
+  $self->{available_ids_select} = to_array();
 
-  $self->{available_labels_arrayref} = \@available_labels_array;
-  $self->{available_labels_hashref} = \%available_labels_hash;
-  $self->{available_labels_selectref} = \%available_labels_select;
+  $self->{available_labels_array} = to_array();
+  $self->{available_labels_hash} = to_hash();
+  $self->{available_labels_select} = to_hash();
 
   # Initialize all selection settings 
 
@@ -130,7 +116,121 @@ sub new {
   $self->{limit} = '';
   $self->{ignore} = 0;
 
+  # Give thyself
+
   return $self;
+
+}
+
+
+
+### Returns text info about the Relations::Family::Member 
+### object. Useful for debugging and export purposes.
+
+sub to_text {
+
+  # Know thyself
+
+  my ($self) = shift;
+
+  # Get the indenting string and current
+  # indenting amount.
+
+  my ($string,$current) = @_;
+
+  # Calculate the ident amount so we don't 
+  # do it a bazillion times.
+
+  my $indent = ($string x $current);
+  my $subindent = ($string x ($current + 1));
+
+  # Create a text string to hold everything
+
+  my $text = '';
+
+  # 411
+
+  $text .= $indent . "Relations::Family::Member: $self\n\n";
+  $text .= $indent . "Name: $self->{name}\n";
+  $text .= $indent . "Label: $self->{label}\n";
+  $text .= $indent . "Database: $self->{database}\n";
+  $text .= $indent . "Table: $self->{table}\n";
+  $text .= $indent . "Alias: $self->{alias}\n";
+  $text .= $indent . "ID Field: $self->{id_field}\n";
+  $text .= $indent . "Query:\n";
+
+  $text .= $self->{query}->to_text($string,$current + 1);
+
+  $text .= $indent . "Chosen Count: $self->{chosen_count}\n";
+  $text .= $indent . "Chosen IDs and Labels: \n";
+
+  foreach my $id (@{$self->{chosen_ids_array}}) {
+
+    $text .= $subindent . "ID: $id ";
+    $text .= $subindent . "Label: $self->{chosen_labels_hash}->{$id}\n";
+
+  }
+
+  $text .= $indent . "Filter:  $self->{filter}\n";
+  $text .= $indent . "Match:  $self->{match}\n";
+  $text .= $indent . "Group:  $self->{group}\n";
+  $text .= $indent . "Limit:  $self->{limit}\n";
+  $text .= $indent . "Ignore:  $self->{ignore}\n";
+
+  $text .= $indent . "Available IDs and Labels: \n";
+
+  foreach my $id (@{$self->{available_ids_array}}) {
+
+    $text .= $subindent . "ID: $id ";
+    $text .= $subindent . "Label: $self->{available_labels_hash}->{$id}\n";
+
+  }
+
+  $text .= $indent . "Parents: \n";
+
+  foreach my $member (@{$self->{parents}}) {
+
+    $text .= $subindent . "Label: $member->{label} ";
+    $text .= $subindent . "Name: $member->{name} ";
+    $text .= $subindent . "Member: $member\n";
+
+  }
+
+  $text .= $indent . "Children: \n";
+
+  foreach my $member (@{$self->{children}}) {
+
+    $text .= $subindent . "Label: $member->{label} ";
+    $text .= $subindent . "Name: $member->{name} ";
+    $text .= $subindent . "Member: $member\n";
+
+  }
+
+  $text .= $indent . "Brothers: \n";
+
+  foreach my $member (@{$self->{brothers}}) {
+
+    $text .= $subindent . "Label: $member->{label} ";
+    $text .= $subindent . "Name: $member->{name} ";
+    $text .= $subindent . "Member: $member\n";
+
+  }
+
+  $text .= $indent . "Sisters: \n";
+
+  foreach my $member (@{$self->{sisters}}) {
+
+    $text .= $subindent . "Label: $member->{label} ";
+    $text .= $subindent . "Name: $member->{name} ";
+    $text .= $subindent . "Member: $member\n";
+
+  }
+
+  $text .= "\n";
+
+  # Return the text
+
+  return $text;
 
 }
 

@@ -1,12 +1,17 @@
-#!/usr/bin/perl
+#!perl
 
 use DBI;
 use Relations;
 use Relations::Query;
+use Relations::Abstract;
+use lib '.';
 use Relations::Family;
 use Relations::Family::Member;
 use Relations::Family::Lineage;
 use Relations::Family::Rivalry;
+use Relations::Family::Value;
+
+use finder;
 
 configure_settings('fam_test','root','','localhost','3306') unless -e "Settings.pm";
 
@@ -20,6 +25,14 @@ $abs = new Relations::Abstract($dbh);
 
 create_finder($abs,$database);
 $fam = relate_finder($abs,$database);
+
+$val = new Relations::Family::Value(-name    => 'sweet',
+                                    -sql     => 'jesus',
+                                    -members => 'choir');
+
+die "Value create failed" unless (($val->{name} eq 'sweet') and 
+                                  ($val->{sql} eq 'jesus') and 
+                                  ($val->{members} eq 'choir'));
 
 $lin = new Relations::Family::Lineage(-parent_member => 'dude',
                                       -parent_field  => 'dude_id',
@@ -62,6 +75,22 @@ $mem = new Relations::Family::Member(-name     => 'rand',
                                      -database => 'mindtrip',
                                      -table    => 'rand_thoughts',
                                      -id_field => 'rd_id',
+                                     -query    => $qry,
+                                     -alias    => 'mooky');
+
+die "Member create failed alias" unless (($mem->{name} eq 'rand')  and 
+                                         ($mem->{label} eq 'Random Thoughts') and 
+                                         ($mem->{database} eq 'mindtrip') and 
+                                         ($mem->{table} eq 'rand_thoughts') and 
+                                         ($mem->{id_field} eq 'rd_id')  and 
+                                         ($mem->{query}->get() eq $query_one) and 
+                                         ($mem->{alias} eq 'mooky'));
+
+$mem = new Relations::Family::Member(-name     => 'rand',
+                                     -label    => 'Random Thoughts',
+                                     -database => 'mindtrip',
+                                     -table    => 'rand_thoughts',
+                                     -id_field => 'rd_id',
                                      -query    => $qry);
 
 die "Member create failed basic" unless (($mem->{name} eq 'rand')  and 
@@ -69,23 +98,24 @@ die "Member create failed basic" unless (($mem->{name} eq 'rand')  and
                                          ($mem->{database} eq 'mindtrip') and 
                                          ($mem->{table} eq 'rand_thoughts') and 
                                          ($mem->{id_field} eq 'rd_id')  and 
-                                         ($mem->{query}->get() eq $query_one));
+                                         ($mem->{query}->get() eq $query_one) and 
+                                         ($mem->{alias} eq 'rand_thoughts'));
 
 die "Member create failed chosen" unless (($mem->{chosen_ids_count} == 0)  and 
                                           ($mem->{chosen_ids_string} eq '')  and 
-                                          (scalar @{$mem->{chosen_ids_arrayref}} == 0) and
-                                          (scalar @{$mem->{chosen_ids_selectref}} == 0) and
+                                          (scalar @{$mem->{chosen_ids_array}} == 0) and
+                                          (scalar @{$mem->{chosen_ids_select}} == 0) and
                                           ($mem->{chosen_labels_string} eq '')  and 
-                                          (scalar @{$mem->{chosen_labels_arrayref}} == 0) and 
-                                          (scalar keys %{$mem->{chosen_labels_hashref}} == 0) and 
-                                          (scalar keys %{$mem->{chosen_labels_selectref}} == 0));
+                                          (scalar @{$mem->{chosen_labels_array}} == 0) and 
+                                          (scalar keys %{$mem->{chosen_labels_hash}} == 0) and 
+                                          (scalar keys %{$mem->{chosen_labels_select}} == 0));
 
 die "Member create failed available" unless (($mem->{available_ids_count} == 0)  and 
-                                             (scalar @{$mem->{available_ids_arrayref}} == 0) and
-                                             (scalar @{$mem->{available_ids_selectref}} == 0) and
-                                             (scalar @{$mem->{available_labels_arrayref}} == 0) and 
-                                             (scalar keys %{$mem->{available_labels_hashref}} == 0) and 
-                                             (scalar keys %{$mem->{available_labels_selectref}} == 0));
+                                             (scalar @{$mem->{available_ids_array}} == 0) and
+                                             (scalar @{$mem->{available_ids_select}} == 0) and
+                                             (scalar @{$mem->{available_labels_array}} == 0) and 
+                                             (scalar keys %{$mem->{available_labels_hash}} == 0) and 
+                                             (scalar keys %{$mem->{available_labels_select}} == 0));
 
 die "Member create failed select" unless (($mem->{filter} eq '') and 
                                           ($mem->{match} == 0) and 
@@ -93,18 +123,18 @@ die "Member create failed select" unless (($mem->{filter} eq '') and
                                           ($mem->{limit} eq '') and 
                                           ($mem->{ignore} == 0));
 
-$fam = new Relations::Family(-abstract  => 'data stuff');
+$fam = new Relations::Family('data stuff');
 
 die "Family create failed" unless (($fam->{abstract} eq 'data stuff')  and 
-                                   (scalar @{$fam->{members_arrayref}} == 0) and 
-                                   (scalar keys %{$fam->{names_hashref}} == 0) and 
-                                   (scalar keys %{$fam->{labels_hashref}} == 0));
+                                   (scalar @{$fam->{members}} == 0) and 
+                                   (scalar keys %{$fam->{names}} == 0) and 
+                                   (scalar keys %{$fam->{labels}} == 0));
 
 $fam->add_member(-member => $mem);
 
-die "Basic add member failed" unless (($fam->{members_arrayref}->[0] == $mem) and
-                                      ($fam->{names_hashref}->{'rand'} == $mem) and
-                                      ($fam->{labels_hashref}->{'Random Thoughts'} == $mem));
+die "Basic add member failed" unless (($fam->{members}->[0] == $mem) and
+                                      ($fam->{names}->{'rand'} == $mem) and
+                                      ($fam->{labels}->{'Random Thoughts'} == $mem));
 
 $fam->add_member(-name     => 'donkey',
                  -label    => 'Donkey Biter',
@@ -113,27 +143,29 @@ $fam->add_member(-name     => 'donkey',
                  -id_field => 'freak_id',
                  -query    => $qry);
 
-die "Regular add member failed" unless (($fam->{members_arrayref}->[1]->{name} eq 'donkey') and
-                                        ($fam->{members_arrayref}->[1]->{label} eq 'Donkey Biter') and
-                                        ($fam->{members_arrayref}->[1]->{database} eq 'dweebas') and
-                                        ($fam->{members_arrayref}->[1]->{table} eq 'donkeys_damnit') and
-                                        ($fam->{members_arrayref}->[1]->{id_field} eq 'freak_id') and
-                                        ($fam->{members_arrayref}->[1]->{query} == $qry) and
-                                        ($fam->{names_hashref}->{'donkey'} == $fam->{members_arrayref}->[1]) and
-                                        ($fam->{labels_hashref}->{'Donkey Biter'} == $fam->{members_arrayref}->[1]));
+die "Regular add member failed" unless (($fam->{members}->[1]->{name} eq 'donkey') and
+                                        ($fam->{members}->[1]->{label} eq 'Donkey Biter') and
+                                        ($fam->{members}->[1]->{database} eq 'dweebas') and
+                                        ($fam->{members}->[1]->{table} eq 'donkeys_damnit') and
+                                        ($fam->{members}->[1]->{id_field} eq 'freak_id') and
+                                        ($fam->{members}->[1]->{query} == $qry) and
+                                        ($fam->{names}->{'donkey'} == $fam->{members}->[1]) and
+                                        ($fam->{labels}->{'Donkey Biter'} == $fam->{members}->[1]) and
+                                        ($fam->{members}->[1]->{alias} eq 'donkeys_damnit'));
 
 $fam->add_member(-name     => 'vb',
                  -label    => 'Venga Boyz',
                  -database => 'songs',
                  -table    => 'we_like',
                  -id_field => 'to_party',
-                 -select   => {'hey' => 'now'},
-                 -from     => {'nappy' => 'winamp'},
-                 -where    => {'happines' => 'justaroundthecorner'},
-                 -group_by => "nikki",
-                 -having   => {'smile' => 'look'},
-                 -order_by => ['before','during','after'],
-                 -limit    => '500');
+                 -query    => {-select   => {'hey' => 'now'},
+                               -from     => {'nappy' => 'winamp'},
+                               -where    => {'happines' => 'justaroundthecorner'},
+                               -group_by => "nikki",
+                               -having   => {'smile' => 'look'},
+                               -order_by => ['before','during','after'],
+                               -limit    => '500'},
+                 -alias    => 'muck_stank');
 
 $query_two = "select now as hey " . 
              "from winamp as nappy ".
@@ -143,130 +175,170 @@ $query_two = "select now as hey " .
              "order by before,during,after ".
              "limit 500";
     
-die "Full add member failed" unless (($fam->{members_arrayref}->[2]->{name} eq 'vb') and
-                                      ($fam->{members_arrayref}->[2]->{label} eq 'Venga Boyz') and
-                                      ($fam->{members_arrayref}->[2]->{database} eq 'songs') and
-                                      ($fam->{members_arrayref}->[2]->{table} eq 'we_like') and
-                                      ($fam->{members_arrayref}->[2]->{id_field} eq 'to_party') and
-                                      ($fam->{members_arrayref}->[2]->{query}->get() == $query_two) and
-                                      ($fam->{names_hashref}->{'vb'} == $fam->{members_arrayref}->[2]) and
-                                      ($fam->{labels_hashref}->{'Venga Boyz'} == $fam->{members_arrayref}->[2]));
+die "Full add member failed" unless (($fam->{members}->[2]->{name} eq 'vb') and
+                                      ($fam->{members}->[2]->{label} eq 'Venga Boyz') and
+                                      ($fam->{members}->[2]->{database} eq 'songs') and
+                                      ($fam->{members}->[2]->{table} eq 'we_like') and
+                                      ($fam->{members}->[2]->{id_field} eq 'to_party') and
+                                      ($fam->{members}->[2]->{query}->get() == $query_two) and
+                                      ($fam->{names}->{'vb'} == $fam->{members}->[2]) and
+                                      ($fam->{labels}->{'Venga Boyz'} == $fam->{members}->[2]) and
+                                      ($fam->{members}->[2]->{alias} eq 'muck_stank'));
 
 $fam->add_lineage(-parent_name  => 'vb',
                   -parent_field => 'wakko',
                   -child_name   => 'donkey',
                   -child_field  => 'jakko');
 
-die "Name add lineage failed" unless (($fam->{names_hashref}->{'vb'}->{children_ref}->[0]->{parent_member} == $fam->{names_hashref}->{'vb'})  and 
-                                      ($fam->{names_hashref}->{'vb'}->{children_ref}->[0]->{parent_field} eq 'wakko')  and 
-                                      ($fam->{names_hashref}->{'vb'}->{children_ref}->[0]->{child_member} == $fam->{names_hashref}->{'donkey'})  and 
-                                      ($fam->{names_hashref}->{'vb'}->{children_ref}->[0]->{child_field} eq 'jakko')  and 
-                                      ($fam->{names_hashref}->{'donkey'}->{parents_ref}->[0]->{parent_member} == $fam->{names_hashref}->{'vb'})  and 
-                                      ($fam->{names_hashref}->{'donkey'}->{parents_ref}->[0]->{parent_field} eq 'wakko')  and 
-                                      ($fam->{names_hashref}->{'donkey'}->{parents_ref}->[0]->{child_member} == $fam->{names_hashref}->{'donkey'})  and 
-                                      ($fam->{names_hashref}->{'donkey'}->{parents_ref}->[0]->{child_field} eq 'jakko'));
+die "Name add lineage failed" unless (($fam->{names}->{'vb'}->{children}->[0]->{parent_member} == $fam->{names}->{'vb'})  and 
+                                      ($fam->{names}->{'vb'}->{children}->[0]->{parent_field} eq 'wakko')  and 
+                                      ($fam->{names}->{'vb'}->{children}->[0]->{child_member} == $fam->{names}->{'donkey'})  and 
+                                      ($fam->{names}->{'vb'}->{children}->[0]->{child_field} eq 'jakko')  and 
+                                      ($fam->{names}->{'donkey'}->{parents}->[0]->{parent_member} == $fam->{names}->{'vb'})  and 
+                                      ($fam->{names}->{'donkey'}->{parents}->[0]->{parent_field} eq 'wakko')  and 
+                                      ($fam->{names}->{'donkey'}->{parents}->[0]->{child_member} == $fam->{names}->{'donkey'})  and 
+                                      ($fam->{names}->{'donkey'}->{parents}->[0]->{child_field} eq 'jakko'));
 
 $fam->add_lineage(-parent_label => 'Random Thoughts',
                   -parent_field => 'sally',
                   -child_label   => 'Venga Boyz',
                   -child_field  => 'wally');
 
-die "Label add lineage failed" unless (($fam->{names_hashref}->{'rand'}->{children_ref}->[0]->{parent_member} == $fam->{names_hashref}->{'rand'})  and 
-                                       ($fam->{names_hashref}->{'rand'}->{children_ref}->[0]->{parent_field} eq 'sally')  and 
-                                       ($fam->{names_hashref}->{'rand'}->{children_ref}->[0]->{child_member} == $fam->{names_hashref}->{'vb'})  and 
-                                       ($fam->{names_hashref}->{'rand'}->{children_ref}->[0]->{child_field} eq 'wally')  and 
-                                       ($fam->{names_hashref}->{'vb'}->{parents_ref}->[0]->{parent_member} == $fam->{names_hashref}->{'rand'})  and 
-                                       ($fam->{names_hashref}->{'vb'}->{parents_ref}->[0]->{parent_field} eq 'sally')  and 
-                                       ($fam->{names_hashref}->{'vb'}->{parents_ref}->[0]->{child_member} == $fam->{names_hashref}->{'vb'})  and 
-                                       ($fam->{names_hashref}->{'vb'}->{parents_ref}->[0]->{child_field} eq 'wally'));
+die "Label add lineage failed" unless (($fam->{names}->{'rand'}->{children}->[0]->{parent_member} == $fam->{names}->{'rand'})  and 
+                                       ($fam->{names}->{'rand'}->{children}->[0]->{parent_field} eq 'sally')  and 
+                                       ($fam->{names}->{'rand'}->{children}->[0]->{child_member} == $fam->{names}->{'vb'})  and 
+                                       ($fam->{names}->{'rand'}->{children}->[0]->{child_field} eq 'wally')  and 
+                                       ($fam->{names}->{'vb'}->{parents}->[0]->{parent_member} == $fam->{names}->{'rand'})  and 
+                                       ($fam->{names}->{'vb'}->{parents}->[0]->{parent_field} eq 'sally')  and 
+                                       ($fam->{names}->{'vb'}->{parents}->[0]->{child_member} == $fam->{names}->{'vb'})  and 
+                                       ($fam->{names}->{'vb'}->{parents}->[0]->{child_field} eq 'wally'));
 
-$fam->add_lineage(-parent_member => $fam->{names_hashref}->{'donkey'},
+$fam->add_lineage(-parent_member => $fam->{names}->{'donkey'},
                   -parent_field  => 'murtle',
-                  -child_member  => $fam->{names_hashref}->{'rand'},
+                  -child_member  => $fam->{names}->{'rand'},
                   -child_field   => 'turtle');
 
-die "Member add lineage failed" unless (($fam->{names_hashref}->{'donkey'}->{children_ref}->[0]->{parent_member} == $fam->{names_hashref}->{'donkey'})  and 
-                                        ($fam->{names_hashref}->{'donkey'}->{children_ref}->[0]->{parent_field} eq 'murtle')  and 
-                                        ($fam->{names_hashref}->{'donkey'}->{children_ref}->[0]->{child_member} == $fam->{names_hashref}->{'rand'})  and 
-                                        ($fam->{names_hashref}->{'donkey'}->{children_ref}->[0]->{child_field} eq 'turtle')  and 
-                                        ($fam->{names_hashref}->{'rand'}->{parents_ref}->[0]->{parent_member} == $fam->{names_hashref}->{'donkey'})  and 
-                                        ($fam->{names_hashref}->{'rand'}->{parents_ref}->[0]->{parent_field} eq 'murtle')  and 
-                                        ($fam->{names_hashref}->{'rand'}->{parents_ref}->[0]->{child_member} == $fam->{names_hashref}->{'rand'})  and 
-                                        ($fam->{names_hashref}->{'rand'}->{parents_ref}->[0]->{child_field} eq 'turtle'));
+die "Member add lineage failed" unless (($fam->{names}->{'donkey'}->{children}->[0]->{parent_member} == $fam->{names}->{'donkey'})  and 
+                                        ($fam->{names}->{'donkey'}->{children}->[0]->{parent_field} eq 'murtle')  and 
+                                        ($fam->{names}->{'donkey'}->{children}->[0]->{child_member} == $fam->{names}->{'rand'})  and 
+                                        ($fam->{names}->{'donkey'}->{children}->[0]->{child_field} eq 'turtle')  and 
+                                        ($fam->{names}->{'rand'}->{parents}->[0]->{parent_member} == $fam->{names}->{'donkey'})  and 
+                                        ($fam->{names}->{'rand'}->{parents}->[0]->{parent_field} eq 'murtle')  and 
+                                        ($fam->{names}->{'rand'}->{parents}->[0]->{child_member} == $fam->{names}->{'rand'})  and 
+                                        ($fam->{names}->{'rand'}->{parents}->[0]->{child_field} eq 'turtle'));
 
-$new_lin = new Relations::Family::Lineage(-parent_member => $fam->{names_hashref}->{'vb'},
+$new_lin = new Relations::Family::Lineage(-parent_member => $fam->{names}->{'vb'},
                                           -parent_field  => 'heehee',
-                                          -child_member  => $fam->{names_hashref}->{'rand'},
+                                          -child_member  => $fam->{names}->{'rand'},
                                           -child_field   => 'haahaa');
 
 $fam->add_lineage(-lineage => $new_lin);
 
-die "Direct add lineage failed" unless (($fam->{names_hashref}->{'vb'}->{children_ref}->[1]->{parent_member} == $fam->{names_hashref}->{'vb'})  and 
-                                        ($fam->{names_hashref}->{'vb'}->{children_ref}->[1]->{parent_field} eq 'heehee')  and 
-                                        ($fam->{names_hashref}->{'vb'}->{children_ref}->[1]->{child_member} == $fam->{names_hashref}->{'rand'})  and 
-                                        ($fam->{names_hashref}->{'vb'}->{children_ref}->[1]->{child_field} eq 'haahaa')  and 
-                                        ($fam->{names_hashref}->{'rand'}->{parents_ref}->[1]->{parent_member} == $fam->{names_hashref}->{'vb'})  and 
-                                        ($fam->{names_hashref}->{'rand'}->{parents_ref}->[1]->{parent_field} eq 'heehee')  and 
-                                        ($fam->{names_hashref}->{'rand'}->{parents_ref}->[1]->{child_member} == $fam->{names_hashref}->{'rand'})  and 
-                                        ($fam->{names_hashref}->{'rand'}->{parents_ref}->[1]->{child_field} eq 'haahaa'));
+die "Direct add lineage failed" unless (($fam->{names}->{'vb'}->{children}->[1]->{parent_member} == $fam->{names}->{'vb'})  and 
+                                        ($fam->{names}->{'vb'}->{children}->[1]->{parent_field} eq 'heehee')  and 
+                                        ($fam->{names}->{'vb'}->{children}->[1]->{child_member} == $fam->{names}->{'rand'})  and 
+                                        ($fam->{names}->{'vb'}->{children}->[1]->{child_field} eq 'haahaa')  and 
+                                        ($fam->{names}->{'rand'}->{parents}->[1]->{parent_member} == $fam->{names}->{'vb'})  and 
+                                        ($fam->{names}->{'rand'}->{parents}->[1]->{parent_field} eq 'heehee')  and 
+                                        ($fam->{names}->{'rand'}->{parents}->[1]->{child_member} == $fam->{names}->{'rand'})  and 
+                                        ($fam->{names}->{'rand'}->{parents}->[1]->{child_field} eq 'haahaa'));
 
 $fam->add_rivalry(-brother_name  => 'vb',
                   -brother_field => 'wakko',
                   -sister_name   => 'donkey',
                   -sister_field  => 'jakko');
 
-die "Name add rivalry failed" unless (($fam->{names_hashref}->{'vb'}->{sisters_ref}->[0]->{brother_member} == $fam->{names_hashref}->{'vb'})  and 
-                                      ($fam->{names_hashref}->{'vb'}->{sisters_ref}->[0]->{brother_field} eq 'wakko')  and 
-                                      ($fam->{names_hashref}->{'vb'}->{sisters_ref}->[0]->{sister_member} == $fam->{names_hashref}->{'donkey'})  and 
-                                      ($fam->{names_hashref}->{'vb'}->{sisters_ref}->[0]->{sister_field} eq 'jakko')  and 
-                                      ($fam->{names_hashref}->{'donkey'}->{brothers_ref}->[0]->{brother_member} == $fam->{names_hashref}->{'vb'})  and 
-                                      ($fam->{names_hashref}->{'donkey'}->{brothers_ref}->[0]->{brother_field} eq 'wakko')  and 
-                                      ($fam->{names_hashref}->{'donkey'}->{brothers_ref}->[0]->{sister_member} == $fam->{names_hashref}->{'donkey'})  and 
-                                      ($fam->{names_hashref}->{'donkey'}->{brothers_ref}->[0]->{sister_field} eq 'jakko'));
+die "Name add rivalry failed" unless (($fam->{names}->{'vb'}->{sisters}->[0]->{brother_member} == $fam->{names}->{'vb'})  and 
+                                      ($fam->{names}->{'vb'}->{sisters}->[0]->{brother_field} eq 'wakko')  and 
+                                      ($fam->{names}->{'vb'}->{sisters}->[0]->{sister_member} == $fam->{names}->{'donkey'})  and 
+                                      ($fam->{names}->{'vb'}->{sisters}->[0]->{sister_field} eq 'jakko')  and 
+                                      ($fam->{names}->{'donkey'}->{brothers}->[0]->{brother_member} == $fam->{names}->{'vb'})  and 
+                                      ($fam->{names}->{'donkey'}->{brothers}->[0]->{brother_field} eq 'wakko')  and 
+                                      ($fam->{names}->{'donkey'}->{brothers}->[0]->{sister_member} == $fam->{names}->{'donkey'})  and 
+                                      ($fam->{names}->{'donkey'}->{brothers}->[0]->{sister_field} eq 'jakko'));
 
 $fam->add_rivalry(-brother_label => 'Random Thoughts',
                   -brother_field => 'sally',
                   -sister_label   => 'Venga Boyz',
                   -sister_field  => 'wally');
 
-die "Label add rivalry failed" unless (($fam->{names_hashref}->{'rand'}->{sisters_ref}->[0]->{brother_member} == $fam->{names_hashref}->{'rand'})  and 
-                                       ($fam->{names_hashref}->{'rand'}->{sisters_ref}->[0]->{brother_field} eq 'sally')  and 
-                                       ($fam->{names_hashref}->{'rand'}->{sisters_ref}->[0]->{sister_member} == $fam->{names_hashref}->{'vb'})  and 
-                                       ($fam->{names_hashref}->{'rand'}->{sisters_ref}->[0]->{sister_field} eq 'wally')  and 
-                                       ($fam->{names_hashref}->{'vb'}->{brothers_ref}->[0]->{brother_member} == $fam->{names_hashref}->{'rand'})  and 
-                                       ($fam->{names_hashref}->{'vb'}->{brothers_ref}->[0]->{brother_field} eq 'sally')  and 
-                                       ($fam->{names_hashref}->{'vb'}->{brothers_ref}->[0]->{sister_member} == $fam->{names_hashref}->{'vb'})  and 
-                                       ($fam->{names_hashref}->{'vb'}->{brothers_ref}->[0]->{sister_field} eq 'wally'));
+die "Label add rivalry failed" unless (($fam->{names}->{'rand'}->{sisters}->[0]->{brother_member} == $fam->{names}->{'rand'})  and 
+                                       ($fam->{names}->{'rand'}->{sisters}->[0]->{brother_field} eq 'sally')  and 
+                                       ($fam->{names}->{'rand'}->{sisters}->[0]->{sister_member} == $fam->{names}->{'vb'})  and 
+                                       ($fam->{names}->{'rand'}->{sisters}->[0]->{sister_field} eq 'wally')  and 
+                                       ($fam->{names}->{'vb'}->{brothers}->[0]->{brother_member} == $fam->{names}->{'rand'})  and 
+                                       ($fam->{names}->{'vb'}->{brothers}->[0]->{brother_field} eq 'sally')  and 
+                                       ($fam->{names}->{'vb'}->{brothers}->[0]->{sister_member} == $fam->{names}->{'vb'})  and 
+                                       ($fam->{names}->{'vb'}->{brothers}->[0]->{sister_field} eq 'wally'));
 
-$fam->add_rivalry(-brother_member => $fam->{names_hashref}->{'donkey'},
+$fam->add_rivalry(-brother_member => $fam->{names}->{'donkey'},
                   -brother_field  => 'murtle',
-                  -sister_member  => $fam->{names_hashref}->{'rand'},
+                  -sister_member  => $fam->{names}->{'rand'},
                   -sister_field   => 'turtle');
 
-die "Member add rivalry failed" unless (($fam->{names_hashref}->{'donkey'}->{sisters_ref}->[0]->{brother_member} == $fam->{names_hashref}->{'donkey'})  and 
-                                        ($fam->{names_hashref}->{'donkey'}->{sisters_ref}->[0]->{brother_field} eq 'murtle')  and 
-                                        ($fam->{names_hashref}->{'donkey'}->{sisters_ref}->[0]->{sister_member} == $fam->{names_hashref}->{'rand'})  and 
-                                        ($fam->{names_hashref}->{'donkey'}->{sisters_ref}->[0]->{sister_field} eq 'turtle')  and 
-                                        ($fam->{names_hashref}->{'rand'}->{brothers_ref}->[0]->{brother_member} == $fam->{names_hashref}->{'donkey'})  and 
-                                        ($fam->{names_hashref}->{'rand'}->{brothers_ref}->[0]->{brother_field} eq 'murtle')  and 
-                                        ($fam->{names_hashref}->{'rand'}->{brothers_ref}->[0]->{sister_member} == $fam->{names_hashref}->{'rand'})  and 
-                                        ($fam->{names_hashref}->{'rand'}->{brothers_ref}->[0]->{sister_field} eq 'turtle'));
+die "Member add rivalry failed" unless (($fam->{names}->{'donkey'}->{sisters}->[0]->{brother_member} == $fam->{names}->{'donkey'})  and 
+                                        ($fam->{names}->{'donkey'}->{sisters}->[0]->{brother_field} eq 'murtle')  and 
+                                        ($fam->{names}->{'donkey'}->{sisters}->[0]->{sister_member} == $fam->{names}->{'rand'})  and 
+                                        ($fam->{names}->{'donkey'}->{sisters}->[0]->{sister_field} eq 'turtle')  and 
+                                        ($fam->{names}->{'rand'}->{brothers}->[0]->{brother_member} == $fam->{names}->{'donkey'})  and 
+                                        ($fam->{names}->{'rand'}->{brothers}->[0]->{brother_field} eq 'murtle')  and 
+                                        ($fam->{names}->{'rand'}->{brothers}->[0]->{sister_member} == $fam->{names}->{'rand'})  and 
+                                        ($fam->{names}->{'rand'}->{brothers}->[0]->{sister_field} eq 'turtle'));
 
-$new_riv = new Relations::Family::Rivalry(-brother_member => $fam->{names_hashref}->{'vb'},
+$new_riv = new Relations::Family::Rivalry(-brother_member => $fam->{names}->{'vb'},
                                           -brother_field  => 'heehee',
-                                          -sister_member  => $fam->{names_hashref}->{'rand'},
+                                          -sister_member  => $fam->{names}->{'rand'},
                                           -sister_field   => 'haahaa');
 
 $fam->add_rivalry(-rivalry => $new_riv);
 
-die "Direct add rivalry failed" unless (($fam->{names_hashref}->{'vb'}->{sisters_ref}->[1]->{brother_member} == $fam->{names_hashref}->{'vb'})  and 
-                                        ($fam->{names_hashref}->{'vb'}->{sisters_ref}->[1]->{brother_field} eq 'heehee')  and 
-                                        ($fam->{names_hashref}->{'vb'}->{sisters_ref}->[1]->{sister_member} == $fam->{names_hashref}->{'rand'})  and 
-                                        ($fam->{names_hashref}->{'vb'}->{sisters_ref}->[1]->{sister_field} eq 'haahaa')  and 
-                                        ($fam->{names_hashref}->{'rand'}->{brothers_ref}->[1]->{brother_member} == $fam->{names_hashref}->{'vb'})  and 
-                                        ($fam->{names_hashref}->{'rand'}->{brothers_ref}->[1]->{brother_field} eq 'heehee')  and 
-                                        ($fam->{names_hashref}->{'rand'}->{brothers_ref}->[1]->{sister_member} == $fam->{names_hashref}->{'rand'})  and 
-                                        ($fam->{names_hashref}->{'rand'}->{brothers_ref}->[1]->{sister_field} eq 'haahaa'));
+die "Direct add rivalry failed" unless (($fam->{names}->{'vb'}->{sisters}->[1]->{brother_member} == $fam->{names}->{'vb'})  and 
+                                        ($fam->{names}->{'vb'}->{sisters}->[1]->{brother_field} eq 'heehee')  and 
+                                        ($fam->{names}->{'vb'}->{sisters}->[1]->{sister_member} == $fam->{names}->{'rand'})  and 
+                                        ($fam->{names}->{'vb'}->{sisters}->[1]->{sister_field} eq 'haahaa')  and 
+                                        ($fam->{names}->{'rand'}->{brothers}->[1]->{brother_member} == $fam->{names}->{'vb'})  and 
+                                        ($fam->{names}->{'rand'}->{brothers}->[1]->{brother_field} eq 'heehee')  and 
+                                        ($fam->{names}->{'rand'}->{brothers}->[1]->{sister_member} == $fam->{names}->{'rand'})  and 
+                                        ($fam->{names}->{'rand'}->{brothers}->[1]->{sister_field} eq 'haahaa'));
+
+$fam->add_value(-name  => 'dandy',
+                -sql => 'cambells elvis',
+                -member_names => 'rand,vb');
+
+die "Name add value failed" unless (($fam->{'values'}->{dandy}->{name} eq 'dandy')  and 
+                                    ($fam->{'values'}->{dandy}->{sql} eq 'cambells elvis')  and 
+                                    ($fam->{'values'}->{dandy}->{members}->[0]  == $fam->{names}->{'rand'})  and 
+                                    ($fam->{'values'}->{dandy}->{members}->[1]  == $fam->{names}->{'vb'}));
+
+$fam->add_value(-name  => 'dip',
+                -sql => 'freak_nasty',
+                -member_labels => 'Venga Boyz,Donkey Biter,Random Thoughts');
+
+die "Label add value failed" unless (($fam->{'values'}->{dip}->{name} eq 'dip')  and 
+                                     ($fam->{'values'}->{dip}->{sql} eq 'freak_nasty')  and 
+                                     ($fam->{'values'}->{dip}->{members}->[0]  == $fam->{names}->{'vb'})  and 
+                                     ($fam->{'values'}->{dip}->{members}->[1]  == $fam->{names}->{'donkey'})  and 
+                                     ($fam->{'values'}->{dip}->{members}->[2]  == $fam->{names}->{'rand'}));
+
+$fam->add_value(-name  => 'poe',
+                -sql => 'pretty',
+                -members => [$fam->{names}->{'rand'},$fam->{names}->{'donkey'}]);
+
+die "Member add value failed" unless (($fam->{'values'}->{poe}->{name} eq 'poe')  and 
+                                      ($fam->{'values'}->{poe}->{sql} eq 'pretty')  and 
+                                      ($fam->{'values'}->{poe}->{members}->[0]  == $fam->{names}->{'rand'})  and 
+                                      ($fam->{'values'}->{poe}->{members}->[1]  == $fam->{names}->{'donkey'}));
+
+$new_val = new Relations::Family::Value(-name    => 'lucinda',
+                                        -sql     => 'essence',
+                                        -members => [$fam->{names}->{'donkey'},$fam->{names}->{'vb'}]);
+
+$fam->add_value(-value => $new_val);
+
+die "Direct add value failed" unless (($fam->{'values'}->{lucinda}->{name} eq 'lucinda')  and 
+                                      ($fam->{'values'}->{lucinda}->{sql} eq 'essence')  and 
+                                      ($fam->{'values'}->{lucinda}->{members}->[0]  == $fam->{names}->{'donkey'})  and 
+                                      ($fam->{'values'}->{lucinda}->{members}->[1]  == $fam->{names}->{'vb'}));
 
 $chosen = $fam->set_chosen(-name   => 'vb',
                            -selects => ["5\tblee",
@@ -279,17 +351,17 @@ $chosen = $fam->set_chosen(-name   => 'vb',
 
 die "Select set chosen failed" unless (($chosen->{count} == 2) and
                                         ($chosen->{ids_string} eq '5,8') and
-                                        ($chosen->{ids_arrayref}->[0] == 5) and
-                                        ($chosen->{ids_arrayref}->[1] == 8) and
-                                        ($chosen->{ids_selectref}->[0] eq "5\tblee") and
-                                        ($chosen->{ids_selectref}->[1] eq "8\tblah") and
-                                        ($chosen->{labels_string} eq 'blee,blah') and
-                                        ($chosen->{labels_arrayref}->[0] eq 'blee') and
-                                        ($chosen->{labels_arrayref}->[1] eq 'blah') and
-                                        ($chosen->{labels_hashref}->{'5'} eq 'blee') and
-                                        ($chosen->{labels_hashref}->{'8'} eq 'blah') and
-                                        ($chosen->{labels_selectref}->{"5\tblee"} eq 'blee') and
-                                        ($chosen->{labels_selectref}->{"8\tblah"} eq 'blah') and
+                                        ($chosen->{ids_array}->[0] == 5) and
+                                        ($chosen->{ids_array}->[1] == 8) and
+                                        ($chosen->{ids_select}->[0] eq "5\tblee") and
+                                        ($chosen->{ids_select}->[1] eq "8\tblah") and
+                                        ($chosen->{labels_string} eq "blee\tblah") and
+                                        ($chosen->{labels_array}->[0] eq 'blee') and
+                                        ($chosen->{labels_array}->[1] eq 'blah') and
+                                        ($chosen->{labels_hash}->{'5'} eq 'blee') and
+                                        ($chosen->{labels_hash}->{'8'} eq 'blah') and
+                                        ($chosen->{labels_select}->{"5\tblee"} eq 'blee') and
+                                        ($chosen->{labels_select}->{"8\tblah"} eq 'blah') and
                                         ($chosen->{filter} eq 'thing') and
                                         ($chosen->{match} == 1) and
                                         ($chosen->{group} == 4) and
@@ -308,17 +380,17 @@ $chosen = $fam->set_chosen(-label   => 'Random Thoughts',
 
 die "Hash set chosen failed" unless (($chosen->{count} == 2) and
                                       ($chosen->{ids_string} eq '23,12') and
-                                      ($chosen->{ids_arrayref}->[0] == 23) and
-                                      ($chosen->{ids_arrayref}->[1] == 12) and
-                                      ($chosen->{ids_selectref}->[0] eq "23\tfoo") and
-                                      ($chosen->{ids_selectref}->[1] eq "12\tbar") and
-                                      ($chosen->{labels_string} eq 'foo,bar') and
-                                      ($chosen->{labels_arrayref}->[0] eq 'foo') and
-                                      ($chosen->{labels_arrayref}->[1] eq 'bar') and
-                                      ($chosen->{labels_hashref}->{'23'} eq 'foo') and
-                                      ($chosen->{labels_hashref}->{'12'} eq 'bar') and
-                                      ($chosen->{labels_selectref}->{"23\tfoo"} eq 'foo') and
-                                      ($chosen->{labels_selectref}->{"12\tbar"} eq 'bar') and
+                                      ($chosen->{ids_array}->[0] == 23) and
+                                      ($chosen->{ids_array}->[1] == 12) and
+                                      ($chosen->{ids_select}->[0] eq "23\tfoo") and
+                                      ($chosen->{ids_select}->[1] eq "12\tbar") and
+                                      ($chosen->{labels_string} eq "foo\tbar") and
+                                      ($chosen->{labels_array}->[0] eq 'foo') and
+                                      ($chosen->{labels_array}->[1] eq 'bar') and
+                                      ($chosen->{labels_hash}->{'23'} eq 'foo') and
+                                      ($chosen->{labels_hash}->{'12'} eq 'bar') and
+                                      ($chosen->{labels_select}->{"23\tfoo"} eq 'foo') and
+                                      ($chosen->{labels_select}->{"12\tbar"} eq 'bar') and
                                       ($chosen->{filter} eq 'thang') and
                                       ($chosen->{match} == 3) and
                                       ($chosen->{group} == 2) and
@@ -336,19 +408,19 @@ $fam->set_chosen(-member  => $mem,
 
 $chosen = $fam->get_chosen(-name => 'rand');
 
-die "Hash set chosen failed" unless (($chosen->{count} == 2) and
+die "Array set chosen failed" unless (($chosen->{count} == 2) and
                                       ($chosen->{ids_string} eq '47,51') and
-                                      ($chosen->{ids_arrayref}->[0] == 47) and
-                                      ($chosen->{ids_arrayref}->[1] == 51) and
-                                      ($chosen->{ids_selectref}->[0] eq "47\tshoe") and
-                                      ($chosen->{ids_selectref}->[1] eq "51\tsaloon") and
-                                      ($chosen->{labels_string} eq 'shoe,saloon') and
-                                      ($chosen->{labels_arrayref}->[0] eq 'shoe') and
-                                      ($chosen->{labels_arrayref}->[1] eq 'saloon') and
-                                      ($chosen->{labels_hashref}->{'47'} eq 'shoe') and
-                                      ($chosen->{labels_hashref}->{'51'} eq 'saloon') and
-                                      ($chosen->{labels_selectref}->{"47\tshoe"} eq 'shoe') and
-                                      ($chosen->{labels_selectref}->{"51\tsaloon"} eq 'saloon') and
+                                      ($chosen->{ids_array}->[0] == 47) and
+                                      ($chosen->{ids_array}->[1] == 51) and
+                                      ($chosen->{ids_select}->[0] eq "47\tshoe") and
+                                      ($chosen->{ids_select}->[1] eq "51\tsaloon") and
+                                      ($chosen->{labels_string} eq "shoe\tsaloon") and
+                                      ($chosen->{labels_array}->[0] eq 'shoe') and
+                                      ($chosen->{labels_array}->[1] eq 'saloon') and
+                                      ($chosen->{labels_hash}->{'47'} eq 'shoe') and
+                                      ($chosen->{labels_hash}->{'51'} eq 'saloon') and
+                                      ($chosen->{labels_select}->{"47\tshoe"} eq 'shoe') and
+                                      ($chosen->{labels_select}->{"51\tsaloon"} eq 'saloon') and
                                       ($chosen->{filter} eq 'g-money') and
                                       ($chosen->{match} == 5) and
                                       ($chosen->{group} == 1) and
@@ -357,7 +429,7 @@ die "Hash set chosen failed" unless (($chosen->{count} == 2) and
 
 $fam->set_chosen(-label  => 'Donkey Biter',
                  -ids     => "21,36",
-                 -labels  => "flew,koo koo",
+                 -labels  => "flew\tkoo koo",
                  -filter => 'special-sauce',
                  -match  => 6,
                  -group  => 1,
@@ -368,17 +440,17 @@ $chosen = $fam->get_chosen(-name => 'donkey');
 
 die "String set chosen failed" unless (($chosen->{count} == 2) and
                                       ($chosen->{ids_string} eq '21,36') and
-                                      ($chosen->{ids_arrayref}->[0] == 21) and
-                                      ($chosen->{ids_arrayref}->[1] == 36) and
-                                      ($chosen->{ids_selectref}->[0] eq "21\tflew") and
-                                      ($chosen->{ids_selectref}->[1] eq "36\tkoo koo") and
-                                      ($chosen->{labels_string} eq 'flew,koo koo') and
-                                      ($chosen->{labels_arrayref}->[0] eq 'flew') and
-                                      ($chosen->{labels_arrayref}->[1] eq 'koo koo') and
-                                      ($chosen->{labels_hashref}->{'21'} eq 'flew') and
-                                      ($chosen->{labels_hashref}->{'36'} eq 'koo koo') and
-                                      ($chosen->{labels_selectref}->{"21\tflew"} eq 'flew') and
-                                      ($chosen->{labels_selectref}->{"36\tkoo koo"} eq 'koo koo') and
+                                      ($chosen->{ids_array}->[0] == 21) and
+                                      ($chosen->{ids_array}->[1] == 36) and
+                                      ($chosen->{ids_select}->[0] eq "21\tflew") and
+                                      ($chosen->{ids_select}->[1] eq "36\tkoo koo") and
+                                      ($chosen->{labels_string} eq "flew\tkoo koo") and
+                                      ($chosen->{labels_array}->[0] eq 'flew') and
+                                      ($chosen->{labels_array}->[1] eq 'koo koo') and
+                                      ($chosen->{labels_hash}->{'21'} eq 'flew') and
+                                      ($chosen->{labels_hash}->{'36'} eq 'koo koo') and
+                                      ($chosen->{labels_select}->{"21\tflew"} eq 'flew') and
+                                      ($chosen->{labels_select}->{"36\tkoo koo"} eq 'koo koo') and
                                       ($chosen->{filter} eq 'special-sauce') and
                                       ($chosen->{match} == 6) and
                                       ($chosen->{group} == 1) and
@@ -396,7 +468,7 @@ $finder->set_chosen(-name   => 'account',
 $needs = \%needs;
 $needed = \%needed;
 
-$need = $finder->get_needs($finder->{names_hashref}->{'account'},$needs,$needed,1);
+$need = $finder->get_needs($finder->{names}->{'account'},$needs,$needed,1);
 
 die "Get self needs failed" unless ((not $need) and
                                     (not $needs->{'account'}));
@@ -407,7 +479,7 @@ die "Get self needs failed" unless ((not $need) and
 $needs = \%needs;
 $needed = \%needed;
 
-$need = $finder->get_needs($finder->{names_hashref}->{'item'},$needs,$needed,1);
+$need = $finder->get_needs($finder->{names}->{'item'},$needs,$needed,1);
 
 die "Get other needs failed" unless (($need) and
                                      ($needs->{'item'}));
@@ -416,116 +488,116 @@ $finder->set_chosen(-name   => 'customer',
                     -ids    => "4,20");
 
 %row = ();
-@values = ();
-push @values, \%row;
-$values = \@values;
+@ids = ();
+push @ids, \%row;
+$ids = \@ids;
 
-%valued = ();
-$valued = \%valued;
+%ided = ();
+$ided = \%ided;
 
-$values = $finder->get_values($finder->{names_hashref}->{'type'},$values,$valued,1,1);
+$ids = $finder->get_ids($finder->{names}->{'type'},$ids,$ided,1,1);
 
-die "Get basic values failed" unless (($values->[0]->{'account'} eq "21,36") and
-                                      ($values->[0]->{'customer'} eq "4,20"));
+die "Get basic values failed" unless (($ids->[0]->{'account'} eq "21,36") and
+                                      ($ids->[0]->{'customer'} eq "4,20"));
 
 $finder->set_chosen(-name   => 'product',
                     -ids    => "3,3445,10000",
                     -match  => 1);
 
 %row = ();
-@values = ();
-push @values, \%row;
-$values = \@values;
+@ids = ();
+push @ids, \%row;
+$ids = \@ids;
 
-%valued = ();
-$valued = \%valued;
+%ided = ();
+$ided = \%ided;
 
-$values = $finder->get_values($finder->{names_hashref}->{'item'},$values,$valued,1,1);
+$ids = $finder->get_ids($finder->{names}->{'item'},$ids,$ided,1,1);
 
-die "Get all values failed" unless (($values->[0]->{'product'} eq "3") and
-                                    ($values->[0]->{'account'} eq "21,36") and
-                                    ($values->[0]->{'customer'} eq "4,20") and
-                                    ($values->[1]->{'product'} eq "3445") and
-                                    ($values->[1]->{'account'} eq "21,36") and
-                                    ($values->[1]->{'customer'} eq "4,20") and
-                                    ($values->[2]->{'product'} eq "10000") and
-                                    ($values->[2]->{'account'} eq "21,36") and
-                                    ($values->[2]->{'customer'} eq "4,20"));
+die "Get all values failed" unless (($ids->[0]->{'product'} eq "3") and
+                                    ($ids->[0]->{'account'} eq "21,36") and
+                                    ($ids->[0]->{'customer'} eq "4,20") and
+                                    ($ids->[1]->{'product'} eq "3445") and
+                                    ($ids->[1]->{'account'} eq "21,36") and
+                                    ($ids->[1]->{'customer'} eq "4,20") and
+                                    ($ids->[2]->{'product'} eq "10000") and
+                                    ($ids->[2]->{'account'} eq "21,36") and
+                                    ($ids->[2]->{'customer'} eq "4,20"));
 
 %row = ();
-@values = ();
-push @values, \%row;
-$values = \@values;
+@ids = ();
+push @ids, \%row;
+$ids = \@ids;
 
-%valued = ();
-$valued = \%valued;
+%ided = ();
+$ided = \%ided;
 
-$values = $finder->get_values($finder->{names_hashref}->{'type'},$values,$valued,1,1);
+$ids = $finder->get_ids($finder->{names}->{'type'},$ids,$ided,1,1);
 
-die "Get all -> any values failed" unless (($values->[0]->{'product'} eq "3,3445,10000") and
-                                           ($values->[0]->{'account'} eq "21,36") and
-                                           ($values->[0]->{'customer'} eq "4,20"));
+die "Get all -> any values failed" unless (($ids->[0]->{'product'} eq "3,3445,10000") and
+                                           ($ids->[0]->{'account'} eq "21,36") and
+                                           ($ids->[0]->{'customer'} eq "4,20"));
 
 $finder->set_chosen(-name   => 'product',
-                    -ids    => $finder->{names_hashref}->{'product'}->{chosen_ids_string},
+                    -ids    => $finder->{names}->{'product'}->{chosen_ids_string},
                     -match  => 0);
 
 $finder->set_chosen(-name   => 'account',
-                    -ids    => $finder->{names_hashref}->{'account'}->{chosen_ids_string},
+                    -ids    => $finder->{names}->{'account'}->{chosen_ids_string},
                     -match  => 1);
 
 $finder->set_chosen(-name   => 'customer',
-                    -ids    => $finder->{names_hashref}->{'customer'}->{chosen_ids_string},
+                    -ids    => $finder->{names}->{'customer'}->{chosen_ids_string},
                     -match  => 1);
 
 %row = ();
-@values = ();
-push @values, \%row;
-$values = \@values;
+@ids = ();
+push @ids, \%row;
+$ids = \@ids;
 
-%valued = ();
-$valued = \%valued;
+%ided = ();
+$ided = \%ided;
 
-$values = $finder->get_values($finder->{names_hashref}->{'account'},$values,$valued,1,1);
+$ids = $finder->get_ids($finder->{names}->{'account'},$ids,$ided,1,1);
 
-die "Get account values failed" unless (($values->[0]->{'product'} eq "3,3445,10000") and
-                                        ($values->[0]->{'customer'} eq "4,20"));
-
-%row = ();
-@values = ();
-push @values, \%row;
-$values = \@values;
-
-%valued = ();
-$valued = \%valued;
-
-$values = $finder->get_values($finder->{names_hashref}->{'customer'},$values,$valued,1,1);
-
-die "Get customer values failed" unless (($values->[0]->{'product'} eq "3,3445,10000") and
-                                         ($values->[0]->{'account'} eq "21,36"));
+die "Get account values failed" unless (($ids->[0]->{'product'} eq "3,3445,10000") and
+                                        ($ids->[0]->{'customer'} eq "4,20"));
 
 %row = ();
-@values = ();
-push @values, \%row;
-$values = \@values;
+@ids = ();
+push @ids, \%row;
+$ids = \@ids;
 
-%valued = ();
-$valued = \%valued;
+%ided = ();
+$ided = \%ided;
 
-$values = $finder->get_values($finder->{names_hashref}->{'item'},$values,$valued,1,1);
+$ids = $finder->get_ids($finder->{names}->{'customer'},$ids,$ided,1,1);
 
-die "Get cross values failed" unless (($values->[0]->{'product'} eq "3,3445,10000") and
-                                      ($values->[0]->{'account'} eq "21") and
-                                      ($values->[0]->{'customer'} eq "4") and
-                                      ($values->[1]->{'product'} eq "3,3445,10000") and
-                                      ($values->[1]->{'account'} eq "36") and
-                                      ($values->[1]->{'customer'} eq "4") and
-                                      ($values->[2]->{'product'} eq "3,3445,10000") and
-                                      ($values->[2]->{'account'} eq "21") and
-                                      ($values->[2]->{'customer'} eq "20") and
-                                      ($values->[3]->{'product'} eq "3,3445,10000") and
-                                      ($values->[3]->{'account'} eq "36") and
-                                      ($values->[3]->{'customer'} eq "20"));
+die "Get customer values failed" unless (($ids->[0]->{'product'} eq "3,3445,10000") and
+                                         ($ids->[0]->{'account'} eq "21,36"));
+
+%row = ();
+@ids = ();
+push @ids, \%row;
+$ids = \@ids;
+
+%ided = ();
+$ided = \%ided;
+
+$ids = $finder->get_ids($finder->{names}->{'item'},$ids,$ided,1,1);
+
+die "Get cross values failed" unless (($ids->[0]->{'product'} eq "3,3445,10000") and
+                                      ($ids->[0]->{'account'} eq "21") and
+                                      ($ids->[0]->{'customer'} eq "4") and
+                                      ($ids->[1]->{'product'} eq "3,3445,10000") and
+                                      ($ids->[1]->{'account'} eq "36") and
+                                      ($ids->[1]->{'customer'} eq "4") and
+                                      ($ids->[2]->{'product'} eq "3,3445,10000") and
+                                      ($ids->[2]->{'account'} eq "21") and
+                                      ($ids->[2]->{'customer'} eq "20") and
+                                      ($ids->[3]->{'product'} eq "3,3445,10000") and
+                                      ($ids->[3]->{'account'} eq "36") and
+                                      ($ids->[3]->{'customer'} eq "20"));
 
 %needs = ();
 %needed = ();
@@ -533,416 +605,184 @@ die "Get cross values failed" unless (($values->[0]->{'product'} eq "3,3445,1000
 $needs = \%needs;
 $needed = \%needed;
 
-$need = $finder->get_needs($finder->{names_hashref}->{'item'},$needs,$needed,1);
+$need = $finder->get_needs($finder->{names}->{'item'},$needs,$needed,1);
 
 %row = ();
-@values = ();
-push @values, \%row;
-$values = \@values;
+@ids = ();
+push @ids, \%row;
+$ids = \@ids;
 
-%valued = ();
-$valued = \%valued;
+%ided = ();
+$ided = \%ided;
 
-$values = $finder->get_values($finder->{names_hashref}->{'item'},$values,$valued,1,1);
+$ids = $finder->get_ids($finder->{names}->{'item'},$ids,$ided,1,1);
 
 %queried = ();
 $queried = \%queried;
 
 $qry = new Relations::Query(-select => 'item_id');
 
-$finder->get_query($finder->{names_hashref}->{'item'},$qry,$values->[2],$needs,$queried);
+$finder->get_query($finder->{names}->{'item'},$qry,$ids->[2],$needs,$queried);
 
 $query = "select item_id " . 
-           "from item,purchase,customer,account,product " . 
-           "where $database.item.pur_id=$database.purchase.pur_id and " .
-                 "$database.purchase.cust_id=$database.customer.cust_id and " .
-                 "$database.customer.cust_id in (20) and " .
-                 "$database.customer.cust_id=$database.account.cust_id and " .
-                 "$database.account.acc_id in (21) and " .
-                 "$database.item.prod_id=$database.product.prod_id and " .
-                 "$database.product.prod_id in (3,3445,10000) ";
+           "from $database.item as item," .
+                "$database.purchase as purchase," . 
+                "$database.customer as customer," . 
+                "$database.account as account," . 
+                "$database.product as product " . 
+           "where item.pur_id=purchase.pur_id and " .
+                 "purchase.cust_id=customer.cust_id and " .
+                 "customer.cust_id in (20) and " .
+                 "customer.cust_id=account.cust_id and " .
+                 "account.acc_id in (21) and " .
+                 "item.prod_id=product.prod_id and " .
+                 "product.prod_id in (3,3445,10000)";
 
-die "Get get query failed" unless (($qry->get() eq $query));
+die "Get query failed" unless (($qry->get() eq $query));
+
+$finder = relate_finder($abs,$database);
+
+$finder->set_chosen(-name   => 'customer',
+                    -ids    => '2,4');
+
+$available = $finder->get_available(-name => 'purchase');
+
+die "Get available failed" unless (($available->{count} == 3) and
+                                    ($available->{ids_array}->[0] == 6) and
+                                    ($available->{ids_array}->[1] == 8) and
+                                    ($available->{ids_array}->[2] == 5) and
+                                    ($available->{ids_select}->[0] eq "6\tLast Night Diner - May 9th, 2001") and
+                                    ($available->{ids_select}->[1] eq "8\tVarney Solutions - January 4th, 2001") and
+                                    ($available->{ids_select}->[2] eq "5\tLast Night Diner - November 3rd, 2000") and
+                                    ($available->{labels_array}->[0] eq "Last Night Diner - May 9th, 2001") and
+                                    ($available->{labels_array}->[1] eq "Varney Solutions - January 4th, 2001") and
+                                    ($available->{labels_array}->[2] eq "Last Night Diner - November 3rd, 2000") and
+                                    ($available->{labels_hash}->{'6'} eq "Last Night Diner - May 9th, 2001") and
+                                    ($available->{labels_hash}->{'8'} eq "Varney Solutions - January 4th, 2001") and
+                                    ($available->{labels_hash}->{'5'} eq "Last Night Diner - November 3rd, 2000") and
+                                    ($available->{labels_select}->{"6\tLast Night Diner - May 9th, 2001"} eq "Last Night Diner - May 9th, 2001") and
+                                    ($available->{labels_select}->{"8\tVarney Solutions - January 4th, 2001"} eq "Varney Solutions - January 4th, 2001") and
+                                    ($available->{labels_select}->{"5\tLast Night Diner - November 3rd, 2000"} eq "Last Night Diner - November 3rd, 2000"));
+
+$finder->set_chosen(-name  => 'customer',
+                    -ids   => '2,4',
+                    -group => 1);
+
+$available = $finder->get_available(-name => 'purchase');
+
+die "Get available group failed" unless (($available->{count} == 5) and
+                                          ($available->{ids_array}->[0] == 3) and
+                                          ($available->{ids_array}->[1] == 7) and
+                                          ($available->{ids_array}->[2] == 4) and
+                                          ($available->{ids_array}->[3] == 2) and
+                                          ($available->{ids_array}->[4] == 1));
+
+$finder->set_chosen(-name   => 'customer');
+
+$finder->set_chosen(-name  => 'purchase',
+                    -ids   => '1,2,3',
+                    -match => 1);
+
+$available = $finder->get_available(-name => 'product');
+
+die "Get available match failed" unless (($available->{count} == 3) and
+                                          ($available->{ids_array}->[0] == 4) and
+                                          ($available->{ids_array}->[1] == 5) and
+                                          ($available->{ids_array}->[2] == 2));
+
+$finder->set_chosen(-name  => 'product',
+                    -limit => 2);
+
+$available = $finder->get_available(-name => 'product');
+
+die "Get available limit failed" unless (($available->{count} == 2) and
+                                          ($available->{ids_array}->[0] == 4) and
+                                          ($available->{ids_array}->[1] == 5));
+
+$finder->set_chosen(-name  => 'product',
+                    -filter => 'To');
+
+$available = $finder->get_available(-name => 'product');
+
+die "Get available limit failed" unless (($available->{count} == 2) and
+                                          ($available->{ids_array}->[0] == 5) and
+                                          ($available->{ids_array}->[1] == 2));
+
+$finder->set_chosen(-name  => 'purchase',
+                    -ids   => '5,6',
+                    -ignore => 1);
+
+$finder->set_chosen(-name  => 'customer',
+                    -ids   => '1');
+
+$finder->set_chosen(-name  => 'product');
+
+$available = $finder->get_available(-name => 'product');
+
+die "Get available ignroe failed" unless (($available->{count} == 6) and
+                                          ($available->{ids_array}->[0] == 9) and
+                                          ($available->{ids_array}->[1] == 4) and
+                                          ($available->{ids_array}->[2] == 3) and
+                                          ($available->{ids_array}->[3] == 5) and
+                                          ($available->{ids_array}->[4] == 1) and
+                                          ($available->{ids_array}->[5] == 2));
+
+$chosen = $finder->choose_available(-name => 'product');
+
+die "choose_available failed" unless (($chosen->{count} == 6) and
+                                      ($chosen->{ids_array}->[0] == 9) and
+                                      ($chosen->{ids_array}->[1] == 4) and
+                                      ($chosen->{ids_array}->[2] == 3) and
+                                      ($chosen->{ids_array}->[3] == 5) and
+                                      ($chosen->{ids_array}->[4] == 1) and
+                                      ($chosen->{ids_array}->[5] == 2));
+
+%ids = ();
+$ids = \%ids;
+
+$ids->{'account'} = 3;
+
+$valued = to_hash('customer,item');
+
+$visits = to_hash();
+$visited = to_hash();
+
+$finder->get_visits($finder->{names}->{'item'},$visits,$visited,$ids,$valued);
+
+die "Get visits failed" unless (($visits->{'customer'}) and
+                                ($visits->{'purchase'}) and
+                                ($visits->{'item'}) and
+                                ($visits->{'account'}) and
+                               !($visits->{'product'}) and
+                               !($visits->{'pur_sp'}) and
+                               !($visits->{'region'}) and
+                               !($visits->{'type'}) and
+                               !($visits->{'sales_person'}));
+
+$finder = relate_finder($abs,$database);
+
+$finder->set_chosen(-label  => 'Customer',
+                    -ids    => '2,4,5');
+
+$finder->add_value(-name  => 'Stuff',
+                   -sql   => 'sum(item.qty)',
+                   -member_names => 'item');
+
+$reunion = $finder->get_reunion(-data        => 'Customer,Stuff',
+                                -use_labels  => 'Customer',
+                                -group_by    => 'Customer',
+                                -order_by    => 'Stuff desc');
+
+$matrix = $abs->select_matrix(-query => $reunion);
+
+die "Get reunion failed" unless ((scalar @$matrix == 3) and
+                                ($matrix->[0]->{Stuff} == 238) and
+                                ($matrix->[1]->{Stuff} == 12) and
+                                ($matrix->[2]->{Stuff} == 9) and
+                                ($matrix->[0]->{Customer} eq "Last Night Diner") and
+                                ($matrix->[1]->{Customer} eq "Teskaday Print Shop") and
+                                ($matrix->[2]->{Customer} eq "Varney Solutions"));
+
+$abs->run_query("DROP DATABASE IF EXISTS $database") or die "Couldn't drop database: $database";
 
 print "\nEverything seems fine\n";
-
-sub create_finder {
-
-  my $abs = shift;
-  my $database = shift;
-
-  $create = "
-
-    DROP DATABASE IF EXISTS $database;
-    CREATE DATABASE $database;
-    USE $database;
-
-    CREATE TABLE account (
-       acc_id int(10) unsigned NOT NULL auto_increment,
-       cust_id tinyint(3) unsigned DEFAULT '0' NOT NULL,
-       balance decimal(6,2) DEFAULT '0.00' NOT NULL,
-       PRIMARY KEY (acc_id),
-       UNIQUE cust_id (cust_id)
-    );
-
-    INSERT INTO account (acc_id, cust_id, balance) VALUES ( '1', '1', '134.87');
-    INSERT INTO account (acc_id, cust_id, balance) VALUES ( '2', '4', '54.65');
-    INSERT INTO account (acc_id, cust_id, balance) VALUES ( '3', '3', '0.00');
-    INSERT INTO account (acc_id, cust_id, balance) VALUES ( '4', '5', '357.72');
-    INSERT INTO account (acc_id, cust_id, balance) VALUES ( '5', '2', '78.99');
-
-    CREATE TABLE customer (
-       cust_id int(10) unsigned NOT NULL auto_increment,
-       cust_name varchar(32) NOT NULL,
-       phone varchar(32) NOT NULL,
-       PRIMARY KEY (cust_id),
-       UNIQUE cust_name (cust_name)
-    );
-
-    INSERT INTO customer (cust_id, cust_name, phone) VALUES ( '1', 'Harry\\'s Garage', '555-8762');
-    INSERT INTO customer (cust_id, cust_name, phone) VALUES ( '2', 'Varney Solutions', '555-8814');
-    INSERT INTO customer (cust_id, cust_name, phone) VALUES ( '3', 'Simply Flowers', '555-1392');
-    INSERT INTO customer (cust_id, cust_name, phone) VALUES ( '4', 'Last Night Diner', '555-0544');
-    INSERT INTO customer (cust_id, cust_name, phone) VALUES ( '5', 'Teskaday Print Shop', '555-4357');
-
-    CREATE TABLE item (
-       item_id int(10) unsigned NOT NULL auto_increment,
-       pur_id int(10) unsigned DEFAULT '0' NOT NULL,
-       prod_id int(10) unsigned DEFAULT '0' NOT NULL,
-       qty int(10) unsigned DEFAULT '0' NOT NULL,
-       PRIMARY KEY (item_id),
-       UNIQUE ord_id (pur_id, prod_id)
-    );
-
-    INSERT INTO item (item_id, pur_id, prod_id, qty) VALUES ( '1', '1', '3', '2');
-    INSERT INTO item (item_id, pur_id, prod_id, qty) VALUES ( '2', '1', '4', '10');
-    INSERT INTO item (item_id, pur_id, prod_id, qty) VALUES ( '3', '1', '1', '3');
-    INSERT INTO item (item_id, pur_id, prod_id, qty) VALUES ( '4', '1', '2', '30');
-    INSERT INTO item (item_id, pur_id, prod_id, qty) VALUES ( '5', '1', '5', '14');
-    INSERT INTO item (item_id, pur_id, prod_id, qty) VALUES ( '6', '2', '4', '5');
-    INSERT INTO item (item_id, pur_id, prod_id, qty) VALUES ( '7', '2', '5', '7');
-    INSERT INTO item (item_id, pur_id, prod_id, qty) VALUES ( '8', '2', '2', '10');
-    INSERT INTO item (item_id, pur_id, prod_id, qty) VALUES ( '9', '3', '9', '1');
-    INSERT INTO item (item_id, pur_id, prod_id, qty) VALUES ( '10', '3', '4', '5');
-    INSERT INTO item (item_id, pur_id, prod_id, qty) VALUES ( '11', '3', '5', '5');
-    INSERT INTO item (item_id, pur_id, prod_id, qty) VALUES ( '12', '3', '2', '12');
-    INSERT INTO item (item_id, pur_id, prod_id, qty) VALUES ( '13', '4', '6', '1');
-    INSERT INTO item (item_id, pur_id, prod_id, qty) VALUES ( '14', '4', '9', '1');
-    INSERT INTO item (item_id, pur_id, prod_id, qty) VALUES ( '15', '4', '8', '1');
-    INSERT INTO item (item_id, pur_id, prod_id, qty) VALUES ( '16', '4', '7', '1');
-    INSERT INTO item (item_id, pur_id, prod_id, qty) VALUES ( '17', '5', '13', '24');
-    INSERT INTO item (item_id, pur_id, prod_id, qty) VALUES ( '18', '5', '12', '50');
-    INSERT INTO item (item_id, pur_id, prod_id, qty) VALUES ( '19', '5', '10', '32');
-    INSERT INTO item (item_id, pur_id, prod_id, qty) VALUES ( '20', '5', '11', '120');
-    INSERT INTO item (item_id, pur_id, prod_id, qty) VALUES ( '21', '6', '12', '12');
-    INSERT INTO item (item_id, pur_id, prod_id, qty) VALUES ( '22', '7', '9', '12');
-    INSERT INTO item (item_id, pur_id, prod_id, qty) VALUES ( '23', '8', '6', '1');
-    INSERT INTO item (item_id, pur_id, prod_id, qty) VALUES ( '24', '8', '9', '1');
-    INSERT INTO item (item_id, pur_id, prod_id, qty) VALUES ( '25', '8', '8', '1');
-    INSERT INTO item (item_id, pur_id, prod_id, qty) VALUES ( '26', '8', '7', '6');
-
-    CREATE TABLE product (
-       prod_id int(10) unsigned NOT NULL auto_increment,
-       prod_name varchar(16) NOT NULL,
-       type_id int(10) unsigned DEFAULT '0' NOT NULL,
-       PRIMARY KEY (prod_id),
-       UNIQUE prod_name (prod_name)
-    );
-
-    INSERT INTO product (prod_id, prod_name, type_id) VALUES ( '1', 'Towel Dispenser', '1');
-    INSERT INTO product (prod_id, prod_name, type_id) VALUES ( '2', 'Towels', '1');
-    INSERT INTO product (prod_id, prod_name, type_id) VALUES ( '3', 'Soap Dispenser', '1');
-    INSERT INTO product (prod_id, prod_name, type_id) VALUES ( '4', 'Soap', '1');
-    INSERT INTO product (prod_id, prod_name, type_id) VALUES ( '5', 'Toilet Paper', '1');
-    INSERT INTO product (prod_id, prod_name, type_id) VALUES ( '6', 'Answer Machine', '2');
-    INSERT INTO product (prod_id, prod_name, type_id) VALUES ( '7', 'Phone', '2');
-    INSERT INTO product (prod_id, prod_name, type_id) VALUES ( '8', 'Fax', '2');
-    INSERT INTO product (prod_id, prod_name, type_id) VALUES ( '9', 'Copy Machine', '2');
-    INSERT INTO product (prod_id, prod_name, type_id) VALUES ( '10', 'Dishes', '3');
-    INSERT INTO product (prod_id, prod_name, type_id) VALUES ( '11', 'Silverware', '3');
-    INSERT INTO product (prod_id, prod_name, type_id) VALUES ( '12', 'Cups', '3');
-    INSERT INTO product (prod_id, prod_name, type_id) VALUES ( '13', 'Bowls', '3');
-
-    CREATE TABLE pur_sp (
-       ps_id int(10) unsigned NOT NULL auto_increment,
-       pur_id int(10) unsigned DEFAULT '0' NOT NULL,
-       sp_id int(10) unsigned DEFAULT '0' NOT NULL,
-       PRIMARY KEY (ps_id),
-       UNIQUE ord_id (pur_id, sp_id)
-    );
-
-    INSERT INTO pur_sp (ps_id, pur_id, sp_id) VALUES ( '1', '1', '14');
-    INSERT INTO pur_sp (ps_id, pur_id, sp_id) VALUES ( '2', '3', '3');
-    INSERT INTO pur_sp (ps_id, pur_id, sp_id) VALUES ( '3', '4', '10');
-    INSERT INTO pur_sp (ps_id, pur_id, sp_id) VALUES ( '4', '5', '8');
-    INSERT INTO pur_sp (ps_id, pur_id, sp_id) VALUES ( '5', '5', '16');
-    INSERT INTO pur_sp (ps_id, pur_id, sp_id) VALUES ( '6', '5', '9');
-    INSERT INTO pur_sp (ps_id, pur_id, sp_id) VALUES ( '7', '6', '12');
-    INSERT INTO pur_sp (ps_id, pur_id, sp_id) VALUES ( '8', '6', '6');
-    INSERT INTO pur_sp (ps_id, pur_id, sp_id) VALUES ( '9', '6', '14');
-    INSERT INTO pur_sp (ps_id, pur_id, sp_id) VALUES ( '10', '6', '1');
-    INSERT INTO pur_sp (ps_id, pur_id, sp_id) VALUES ( '11', '7', '8');
-    INSERT INTO pur_sp (ps_id, pur_id, sp_id) VALUES ( '12', '7', '15');
-    INSERT INTO pur_sp (ps_id, pur_id, sp_id) VALUES ( '13', '7', '7');
-    INSERT INTO pur_sp (ps_id, pur_id, sp_id) VALUES ( '14', '8', '4');
-
-    CREATE TABLE purchase (
-       pur_id int(10) unsigned NOT NULL auto_increment,
-       cust_id int(10) unsigned DEFAULT '0' NOT NULL,
-       date date DEFAULT '0000-00-00' NOT NULL,
-       PRIMARY KEY (pur_id)
-    );
-
-    INSERT INTO purchase (pur_id, cust_id, date) VALUES ( '1', '1', '2000-12-07');
-    INSERT INTO purchase (pur_id, cust_id, date) VALUES ( '2', '1', '2001-02-08');
-    INSERT INTO purchase (pur_id, cust_id, date) VALUES ( '3', '1', '2001-04-21');
-    INSERT INTO purchase (pur_id, cust_id, date) VALUES ( '4', '3', '2001-03-10');
-    INSERT INTO purchase (pur_id, cust_id, date) VALUES ( '5', '4', '2000-11-03');
-    INSERT INTO purchase (pur_id, cust_id, date) VALUES ( '6', '4', '2001-05-09');
-    INSERT INTO purchase (pur_id, cust_id, date) VALUES ( '7', '5', '2001-04-07');
-    INSERT INTO purchase (pur_id, cust_id, date) VALUES ( '8', '2', '2001-01-04');
-
-    CREATE TABLE region (
-       reg_id int(10) unsigned NOT NULL auto_increment,
-       reg_name varchar(16) NOT NULL,
-       PRIMARY KEY (reg_id),
-       UNIQUE reg_name (reg_name)
-    );
-
-    INSERT INTO region (reg_id, reg_name) VALUES ( '1', 'North East');
-    INSERT INTO region (reg_id, reg_name) VALUES ( '2', 'South East');
-    INSERT INTO region (reg_id, reg_name) VALUES ( '3', 'South West');
-    INSERT INTO region (reg_id, reg_name) VALUES ( '4', 'North West');
-
-    CREATE TABLE sales_person (
-       sp_id int(10) unsigned NOT NULL auto_increment,
-       f_name varchar(32) NOT NULL,
-       l_name varchar(32) NOT NULL,
-       reg_id int(10) unsigned DEFAULT '0' NOT NULL,
-       PRIMARY KEY (sp_id),
-       UNIQUE f_name (f_name, l_name)
-    );
-
-    INSERT INTO sales_person (sp_id, f_name, l_name, reg_id) VALUES ( '1', 'John', 'Lockland', '1');
-    INSERT INTO sales_person (sp_id, f_name, l_name, reg_id) VALUES ( '2', 'Mimi', 'Butterfield', '4');
-    INSERT INTO sales_person (sp_id, f_name, l_name, reg_id) VALUES ( '3', 'Sheryl', 'Saunders', '2');
-    INSERT INTO sales_person (sp_id, f_name, l_name, reg_id) VALUES ( '4', 'Frank', 'Macena', '1');
-    INSERT INTO sales_person (sp_id, f_name, l_name, reg_id) VALUES ( '5', 'Joyce', 'Parkhurst', '3');
-    INSERT INTO sales_person (sp_id, f_name, l_name, reg_id) VALUES ( '6', 'Dave', 'Gropenhiemer', '4');
-    INSERT INTO sales_person (sp_id, f_name, l_name, reg_id) VALUES ( '7', 'Hank', 'Wishings', '2');
-    INSERT INTO sales_person (sp_id, f_name, l_name, reg_id) VALUES ( '8', 'Fred', 'Pirozzi', '3');
-    INSERT INTO sales_person (sp_id, f_name, l_name, reg_id) VALUES ( '9', 'Sally', 'Rogers', '3');
-    INSERT INTO sales_person (sp_id, f_name, l_name, reg_id) VALUES ( '10', 'Jane', 'Wadsworth', '4');
-    INSERT INTO sales_person (sp_id, f_name, l_name, reg_id) VALUES ( '11', 'Ravi', 'Svenka', '1');
-    INSERT INTO sales_person (sp_id, f_name, l_name, reg_id) VALUES ( '12', 'Jennie', 'Dryden', '1');
-    INSERT INTO sales_person (sp_id, f_name, l_name, reg_id) VALUES ( '13', 'Mike', 'Nicerby', '4');
-    INSERT INTO sales_person (sp_id, f_name, l_name, reg_id) VALUES ( '14', 'Karen', 'Harner', '2');
-    INSERT INTO sales_person (sp_id, f_name, l_name, reg_id) VALUES ( '15', 'Jose', 'Salina', '3');
-    INSERT INTO sales_person (sp_id, f_name, l_name, reg_id) VALUES ( '16', 'Mya', 'Protaste', '2');
-    INSERT INTO sales_person (sp_id, f_name, l_name, reg_id) VALUES ( '17', 'Calvin', 'Peterson', '1');
-
-    CREATE TABLE type (
-       type_id int(10) unsigned NOT NULL auto_increment,
-       type_name varchar(8) NOT NULL,
-       PRIMARY KEY (type_id),
-       UNIQUE type_name (type_name)
-    );
-
-    INSERT INTO type (type_id, type_name) VALUES ( '1', 'Toiletry');
-    INSERT INTO type (type_id, type_name) VALUES ( '2', 'Office');
-    INSERT INTO type (type_id, type_name) VALUES ( '3', 'Dining')
-    
-  ";
-
-  @create = split ';',$create;
-
-  foreach $create (@create) {
-
-    $abs->run_query($create);
-
-  }
-
-}
-
-sub relate_finder {
-
-  my $abs = shift;
-  my $database = shift;
-
-  my $fam = new Relations::Family($abs);
-
-  $fam->add_member(-name     => 'account',
-                   -label    => 'Cust. Account',
-                   -database => $database,
-                   -table    => 'account',
-                   -id_field => 'acc_id',
-                   -select   => {'id'    => 'acc_id',
-                                 'label' => "concat(cust_name,' - ',balance)"},
-                   -from     => ['account','customer'],
-                   -where    => "customer.cust_id=account.cust_id",
-                   -order_by => "cust_name");
-
-  $fam->add_member(-name     => 'customer',
-                   -label    => 'Customer',
-                   -database => $database,
-                   -table    => 'customer',
-                   -id_field => 'cust_id',
-                   -select   => {'id'    => 'cust_id',
-                                 'label' => 'cust_name'},
-                   -from     => 'customer',
-                   -order_by => "cust_name");
-
-  $fam->add_member(-name     => 'item',
-                   -label    => 'Puchase Item',
-                   -database => $database,
-                   -table    => 'item',
-                   -id_field => 'item_id',
-                   -select   => {'id'    => 'item_id',
-                                 'label' => "concat(
-                                              cust_name,
-                                              ' - ',
-                                              date_format(date, '%M %D, %Y'),
-                                              ' - ',
-                                              prod_name,
-                                              ' - ',
-                                              qty
-                                            )"},
-                   -from     => ['purchase',
-                                 'customer',
-                                 'product',
-                                 'item'],
-                   -where    => ['purchase.pur_id=item.pur_id',
-                                 'product.prod_id=item.prod_id',
-                                 'customer.cust_id=purchase.cust_id'],
-                   -order_by => ['date desc',
-                                 'cust_name',
-                                 'prod_name']);
-
-  $fam->add_member(-name     => 'product',
-                   -label    => 'Product',
-                   -database => $database,
-                   -table    => 'product',
-                   -id_field => 'prod_id',
-                   -select   => {'id'    => 'prod_id',
-                                 'label' => 'prod_name'},
-                   -from     => 'product',
-                   -order_by => "prod_name");
-
-  $fam->add_member(-name     => 'pur_sp',
-                   -label    => 'Purchase via Sales Person',
-                   -database => $database,
-                   -table    => 'pur_sp',
-                   -id_field => 'ps_id',
-                   -select   => {'id'    => 'ps_id',
-                                 'label' => "concat(
-                                              cust_name,
-                                              ' - ',
-                                              date_format(date, '%M %D, %Y'),
-                                              ' via ',
-                                              f_name,
-                                              ' ',
-                                              l_name
-                                            )"},
-                   -from     => ['pur_sp',
-                                 'purchase',
-                                 'customer',
-                                 'sales_person'],
-                   -where    => ['purchase.pur_id=pur_sp.pur_id',
-                                 'customer.cust_id=purchase.cust_id',
-                                 'sales_person.sp_id=pur_sp.sp_id'],
-                   -order_by => ['date desc',
-                                 'cust_name',
-                                 'l_name',
-                                 'f_name']);
-
-  $fam->add_member(-name     => 'purchase',
-                   -label    => 'Purchase',
-                   -database => $database,
-                   -table    => 'purchase',
-                   -id_field => 'pur_id',
-                   -select   => {'id'    => 'pur_id',
-                                 'label' => "concat(
-                                              cust_name,
-                                              ' - ',
-                                              date_format(date, '%M %D, %Y')
-                                            )"},
-                   -from     => ['purchase',
-                                 'customer'],
-                   -where    => 'customer.cust_id=purchase.cust_id',
-                   -order_by => ['date desc',
-                                 'cust_name']);
-
-  $fam->add_member(-name     => 'region',
-                   -label    => 'Region',
-                   -database => $database,
-                   -table    => 'region',
-                   -id_field => 'reg_id',
-                   -select   => {'id'    => 'reg_id',
-                                 'label' => 'reg_name'},
-                   -from     => 'region',
-                   -order_by => "reg_name");
-
-  $fam->add_member(-name     => 'sales_person',
-                   -label    => 'Sales Person',
-                   -database => $database,
-                   -table    => 'sales_person',
-                   -id_field => 'sp_id',
-                   -select   => {'id'    => 'sp_id',
-                                 'label' => "concat(f_name,' ',l_name)"},
-                   -from     => 'sales_person',
-                   -order_by => ["l_name","f_name"]);
-
-  $fam->add_member(-name     => 'type',
-                   -label    => 'Type',
-                   -database => $database,
-                   -table    => 'type',
-                   -id_field => 'type_id',
-                   -select   => {'id'    => 'type_id',
-                                 'label' => 'type_name'},
-                   -from     => 'type',
-                   -order_by => "type_name");
-
-  $fam->add_lineage(-parent_name  => 'purchase',
-                    -parent_field => 'pur_id',
-                    -child_name   => 'item',
-                    -child_field  => 'pur_id');
-
-  $fam->add_lineage(-parent_name  => 'product',
-                    -parent_field => 'prod_id',
-                    -child_name   => 'item',
-                    -child_field  => 'prod_id');
-
-  $fam->add_lineage(-parent_name  => 'type',
-                    -parent_field => 'type_id',
-                    -child_name   => 'product',
-                    -child_field  => 'type_id');
-
-  $fam->add_lineage(-parent_name  => 'purchase',
-                    -parent_field => 'pur_id',
-                    -child_name   => 'pur_sp',
-                    -child_field  => 'pur_id');
-
-  $fam->add_lineage(-parent_name  => 'sales_person',
-                    -parent_field => 'sp_id',
-                    -child_name   => 'pur_sp',
-                    -child_field  => 'sp_id');
-
-  $fam->add_lineage(-parent_name  => 'customer',
-                    -parent_field => 'cust_id',
-                    -child_name   => 'purchase',
-                    -child_field  => 'cust_id');
-
-  $fam->add_lineage(-parent_name  => 'region',
-                    -parent_field => 'reg_id',
-                    -child_name   => 'sales_person',
-                    -child_field  => 'reg_id');
-
-  $fam->add_rivalry(-brother_name  => 'customer',
-                    -brother_field => 'cust_id',
-                    -sister_name   => 'account',
-                    -sister_field  => 'cust_id');
-
-  return $fam;
-
-}
-

@@ -1,11 +1,12 @@
 NAME
 
-  Relations::Family v0.91
+  Relations::Family v0.92
 
 DESCRIPTION
 
   This perl module uses perl5 objects to simplify searching through
-  large, complex MySQL databases, especially those with foreign keys.
+  an reporting on large, complex MySQL databases, especially those 
+  with foreign keys.
 
 COPYRIGHT
 
@@ -22,17 +23,17 @@ INSTALlATION
     perl 5.004
     DBI >= 1.13
     DBD::mysql >= 1.18
-    Relations >= 0.93
-    Relations::Query >= 0.92
-    Relations::Abstract >= 0.93
+    Relations >= 0.94
+    Relations::Query >= 0.93
+    Relations::Abstract >= 0.94
 
-  WIN32 (Relations-Family-0.91.zip)
+  WIN32 (Relations-Family-0.92.zip)
 
     Extract zip file into a directory and type
 
     ppm install Relations-Family.ppd
 
-  UN*X (Relations-Family-0.91.tar.gz)
+  UN*X (Relations-Family-0.92.tar.gz)
 
     Extract bundle into a directory and type
 
@@ -59,5 +60,5 @@ DEMONSTRATION
 
     perl demo.pl
 
-  while in the Relations-Family installation directory.
+  while in the installation directory.
   

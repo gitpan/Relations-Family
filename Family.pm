@@ -4,6 +4,9 @@ package Relations::Family;
 require Exporter;
 require DBI;
 require 5.004;
+require Relations;
+require Relations::Query;
+require Relations::Abstract;
 
 use Relations;
 use Relations::Query;
@@ -11,6 +14,7 @@ use Relations::Abstract;
 use Relations::Family::Member;
 use Relations::Family::Lineage;
 use Relations::Family::Rivalry;
+use Relations::Family::Value;
 
 # You can run this file through either pod2man or pod2html to produce pretty
 # documentation in manual or html file format (these utilities are part of the
@@ -22,15 +26,13 @@ use Relations::Family::Rivalry;
 # This program is free software, you can redistribute it and/or modify it under
 # the same terms as Perl istelf
 
-$Relations::Family::VERSION = '0.91';
+$Relations::Family::VERSION = '0.92';
 
 @ISA = qw(Exporter);
 
 @EXPORT    = ();		
 
-@EXPORT_OK = qw(
-                new
-               );
+@EXPORT_OK = qw(new);
 
 %EXPORT_TAGS = ();
 
@@ -38,12 +40,9 @@ $Relations::Family::VERSION = '0.91';
 
 use strict;
 
-# Create a Relations::Family object. This object allows
-# you to create lists of object to select from, and 
-# queries the available selections from a list off the
-# selections made from other lists. This is very useful
-# in drillling down through a large (lotta data) complex 
-# (lotta tables) MySQL relational database.
+
+
+### Create a Relations::Family object.
 
 sub new {
 
@@ -51,45 +50,54 @@ sub new {
 
   my ($type) = shift;
 
-  # Get all the arguments passed
+  # Get the argument passed
 
-  my ($abstract) = rearrange(['ABSTRACT'],@_);
+  my ($abstract) = shift;
 
-  # $dbh - Default database handle
+  # $abstract - Relations::Abstract module for dbh stuff
 
   # Create the hash to hold all the vars
   # for this object.
 
-  my $self = {};
+  my $self = {};  
 
   # Bless it with the type sent (I think this
   # makes it a full fledged object)
 
   bless $self, $type;
 
-  # Add the info into the hash only if it was sent
+  # Die if they didn't send an abstract
+
+  die "Relations::Family requires a Relations::Abstract object!" unless ($abstract);
+
+  # Add the info into the hash.
 
   $self->{abstract} = $abstract;
 
-  # Create an array and a hash of members
+  # Create an array and a hash of members, a 
+  # a hash lookup by name of members, a hash
+  # lookup by label of members, and a hash 
+  # lookup by name of values. Store the 
+  # references into the object
 
-  my @members_array = ();
-  my %names_hash = ();
-  my %labels_hash = ();
+  $self->{members} = to_array();
+  $self->{names} = to_hash();
+  $self->{labels} = to_hash();
+  $self->{'values'} = to_hash();
 
-  $self->{members_arrayref} = \@members_array;
-  $self->{names_hashref} = \%names_hash;
-  $self->{labels_hashref} = \%labels_hash;
+  # Give thyself
 
   return $self;
 
 }
 
-# Adds a member to this family. 
+
+
+### Adds a member to this family. 
 
 sub add_member {
 
-  # Get the type we were sent
+  # Know thyself
 
   my ($self) = shift;
 
@@ -100,27 +108,15 @@ sub add_member {
       $database,
       $table,
       $id_field,
-      $select,
-      $from,
-      $where,
-      $group_by,
-      $having,
-      $order_by,
-      $limit,
       $query,
+      $alias,
       $member) = rearrange(['NAME',
                             'LABEL',
                             'DATABASE',
                             'TABLE',
                             'ID_FIELD',
-                            'SELECT',
-                            'FROM',
-                            'WHERE',
-                            'GROUP_BY',
-                            'HAVING',
-                            'ORDER_BY',
-                            'LIMIT',
                             'QUERY',
+                            'ALIAS',
                             'MEMBER'],@_);
 
 
@@ -129,37 +125,35 @@ sub add_member {
   # $database - The member's database
   # $table - The member's table 
   # $id_field - The name of the member's id field
-  # $select - The select clause of the member's query
-  # $from - The from clause of the member's query
-  # $where - The where clause of the member's query
-  # $group_by - The group by clause of the member's query
-  # $having - The having clause of the member's query
-  # $order_by - The order_by clause of the member's query
-  # $limit - The limit clause of the member's query
-  # $query - The member's query object
+  # $query - The member's query object, or hash
+  # $alias - The alias for the member's table
   # $member - The member to add
 
-  # Unless they sent a query or member, create a query using
-  # the bits they did send.
+  # Double check to make sure we don't already have
+  # a member with the same name.
 
-  unless ($query || $member) {
+  return $self->{abstract}->report_error("add_member failed: Dupe name: $name\n") 
+    if $self->{names}->{$name};
 
-    $query = new Relations::Query(-select   => $select,
-                                  -from     => $from,
-                                  -where    => $where,
-                                  -group_by => $group_by,
-                                  -having   => $having,
-                                  -order_by => $order_by,
-                                  -limit    => $limit);
+  # Double check to make sure we don't already have
+  # a member with the same label.
 
-    # Make the query distinct
+  return $self->{abstract}->report_error("add_member failed: Dupe label: $label\n") 
+    if $self->{labels}->{$label};
 
-    $query->{'select'} = 'distinct ' . $query->{'select'};
+  # If they sent a hash for the query and they didn't
+  # send a member to use, create a query object using
+  # the hash they sent.
 
-  }
+  $query = new Relations::Query($query) if ((ref($query) eq 'HASH') && !$member);
 
+  # Unless the word distinct is the first part of the
+  # select clause of the query, make it so.
+
+  $query->{'select'} = 'distinct ' . $query->{'select'} unless $query->{'select'} =~ /^distinct/;
+  
   # Unless they sent an already created member, create
-  # one using what the did send.
+  # one using what they did send.
 
   unless ($member) {
 
@@ -168,34 +162,29 @@ sub add_member {
                                             -database => $database,
                                             -table    => $table,
                                             -id_field => $id_field,
+                                            -alias    => $alias,
                                             -query    => $query);
 
   }
 
-  # Double check to make sure we don't already have
-  # a member with the same name.
+  # Add the member to the array of lists, the names 
+  # hash, and the labels hash, so we can look it up 
+  # when we need to.
 
-  return 0 if $self->{names_hashref}->{$member->{name}};
+  push @{$self->{members}}, $member;
+  $self->{names}->{$member->{name}} = $member;
+  $self->{labels}->{$member->{label}} = $member;
 
-  # Double check to make sure we don't already have
-  # a member with the same label.
+  # Return the member so they know everything worked.
 
-  return 0 if $self->{labels_hashref}->{$member->{label}};
-
-  # Ok, it checks out. Add it to the array of lists,
-  # the names hash, and the labels hash, so we can
-  # look it up when we need to.
-
-  push @{$self->{members_arrayref}}, $member;
-  $self->{names_hashref}->{$member->{name}} = $member;
-  $self->{labels_hashref}->{$member->{label}} = $member;
-
-  return 1;
+  return $member;
 
 }
 
-# Establishes a one to many relationship between
-# two members. 
+
+
+### Establishes a one to many relationship between
+### two members. 
 
 sub add_lineage {
 
@@ -213,15 +202,15 @@ sub add_lineage {
       $parent_label,
       $child_member,
       $child_label,
-      $lineage) = rearrange([ 'PARENT_NAME',
-                              'PARENT_FIELD',
-                              'CHILD_NAME',
-                              'CHILD_FIELD',
-                              'PARENT_MEMBER',
-                              'PARENT_LABEL',
-                              'CHILD_MEMBER',
-                              'CHILD_LABEL',
-                              'LINEAGE'],@_);
+      $lineage) = rearrange(['PARENT_NAME',
+                             'PARENT_FIELD',
+                             'CHILD_NAME',
+                             'CHILD_FIELD',
+                             'PARENT_MEMBER',
+                             'PARENT_LABEL',
+                             'CHILD_MEMBER',
+                             'CHILD_LABEL',
+                             'LINEAGE'],@_);
 
 
   # $parent_name - The name of the one member
@@ -233,24 +222,50 @@ sub add_lineage {
   # $child_member - The many member
   # $child_label - The label of the many member
 
-  # Unless they sent a name or member or lineage, get the 
-  # parent name using the label. Then unless they sent a 
-  # member or lineage, get the parent member using the name.
+  # If the parent label was sent but isn't found, 
+  # something went wrong. Let the user know what's up.
 
-  $parent_name = $self->{labels_hashref}->{$parent_label}->{name} 
+  return $self->{abstract}->report_error("add_lineage failed: parent label '$parent_label' not found\n")
+    if ($parent_label && !$self->{labels}->{$parent_label});
+
+  # If the parent name was sent but isn't found, something 
+  # went wrong. Let the user know what's up.
+
+  return $self->{abstract}->report_error("add_lineage failed: parent name '$parent_name' not found\n")
+    if ($parent_name && !$self->{names}->{$parent_name});
+
+  # Unless they sent a parent name or parent member or 
+  # lineage, get the parent name using the parent label. 
+  # Then unless they sent a parent member or lineage, get 
+  # the parent member using the parent name.
+
+  $parent_name = $self->{labels}->{$parent_label}->{name} 
     unless ($parent_name || $parent_member || $lineage);
 
-  $parent_member = $self->{names_hashref}->{$parent_name} 
+  $parent_member = $self->{names}->{$parent_name} 
     unless ($parent_member || $lineage);
 
-  # Unless they sent a name or member or lineage, get the 
-  # child name using the label. Then unless they sent a 
-  # member or lineage, get the child member using the name.
+  # If the child label was sent but isn't found, 
+  # something went wrong. Let the user know what's up.
 
-  $child_name = $self->{labels_hashref}->{$child_label}->{name} 
+  return $self->{abstract}->report_error("add_lineage failed: child label '$child_label' not found\n")
+    if ($child_label && !$self->{labels}->{$child_label});
+
+  # If the child name was sent but isn't found, something 
+  # went wrong. Let the user know what's up.
+
+  return $self->{abstract}->report_error("add_lineage failed: child name '$child_name' not found\n")
+    if ($child_name && !$self->{names}->{$child_name});
+
+  # Unless they sent a child name or child member or 
+  # lineage, get the child name using the child label. 
+  # Then unless they sent a child member or lineage, get 
+  # the child member using the child name.
+
+  $child_name = $self->{labels}->{$child_label}->{name} 
     unless ($child_name || $child_member || $lineage);
 
-  $child_member = $self->{names_hashref}->{$child_name} 
+  $child_member = $self->{names}->{$child_name} 
     unless ($child_member || $lineage);
 
   # Unless they sent a lineage, create one if they did
@@ -258,12 +273,19 @@ sub add_lineage {
 
   unless ($lineage) {
 
-    # Double check that we found the members.
+    # If the parent field name isn't defined, something went
+    # wrong. Let the user know what's up.
 
-    return 0 unless ($parent_member &&
-                     $parent_field &&
-                     $child_member &&
-                     $child_field);
+    return $self->{abstract}->report_error("add_lineage failed: parent field not sent\n")
+      unless defined $parent_field;
+
+    # If the child field name isn't defined, something went
+    # wrong. Let the user know what's up.
+
+    return $self->{abstract}->report_error("add_lineage failed: child field not sent\n")
+      unless defined $child_field;
+
+    # Create the new lineage object using the info sent.
 
     $lineage = new Relations::Family::Lineage(-parent_member => $parent_member,
                                               -parent_field  => $parent_field,
@@ -276,15 +298,19 @@ sub add_lineage {
   # the parent and child so they know that they're related 
   # and how.
 
-  push @{$lineage->{child_member}->{parents_ref}}, $lineage;
-  push @{$lineage->{parent_member}->{children_ref}}, $lineage;
+  push @{$lineage->{child_member}->{parents}}, $lineage;
+  push @{$lineage->{parent_member}->{children}}, $lineage;
 
-  return 1;
+  # Return the lineage because everything worked out.
+
+  return $lineage;
 
 }
 
-# Establishes a one to one relationship between
-# two members. 
+
+
+### Establishes a one to one relationship between
+### two members. 
 
 sub add_rivalry {
 
@@ -302,15 +328,15 @@ sub add_rivalry {
       $brother_label,
       $sister_member,
       $sister_label,
-      $rivalry) = rearrange([ 'BROTHER_NAME',
-                              'BROTHER_FIELD',
-                              'SISTER_NAME',
-                              'SISTER_FIELD',
-                              'BROTHER_MEMBER',
-                              'BROTHER_LABEL',
-                              'SISTER_MEMBER',
-                              'SISTER_LABEL',
-                              'RIVALRY'],@_);
+      $rivalry) = rearrange(['BROTHER_NAME',
+                             'BROTHER_FIELD',
+                             'SISTER_NAME',
+                             'SISTER_FIELD',
+                             'BROTHER_MEMBER',
+                             'BROTHER_LABEL',
+                             'SISTER_MEMBER',
+                             'SISTER_LABEL',
+                             'RIVALRY'],@_);
 
 
   # $brother_name - The name of the one member
@@ -322,24 +348,50 @@ sub add_rivalry {
   # $sister_member - The other member
   # $sister_label - The label of the other member
 
-  # Unless they sent a name or member or rivalry, get the 
-  # brother name using the label. Then unless they sent a 
-  # member or rivalry, get the brother member using the name.
+  # If the brother label was sent but isn't found, 
+  # something went wrong. Let the user know what's up.
 
-  $brother_name = $self->{labels_hashref}->{$brother_label}->{name} 
+  return $self->{abstract}->report_error("add_rivalry failed: brother label '$brother_label' not found\n")
+    if ($brother_label && !$self->{labels}->{$brother_label});
+
+  # If the brother name was sent but isn't found, something 
+  # went wrong. Let the user know what's up.
+
+  return $self->{abstract}->report_error("add_rivalry failed: brother name '$brother_name' not found\n")
+    if ($brother_name && !$self->{names}->{$brother_name});
+
+  # Unless they sent a brother name or brother member or 
+  # rivalry, get the brother name using the brother label. 
+  # Then unless they sent a brother member or rivalry, get 
+  # the brother member using the brother name.
+
+  $brother_name = $self->{labels}->{$brother_label}->{name} 
     unless ($brother_name || $brother_member || $rivalry);
 
-  $brother_member = $self->{names_hashref}->{$brother_name} 
+  $brother_member = $self->{names}->{$brother_name} 
     unless ($brother_member || $rivalry);
 
-  # Unless they sent a name or member or rivalry, get the 
-  # sister name using the label. Then unless they sent a 
-  # member or rivalry, get the sister member using the name.
+  # If the sister label was sent but isn't found, 
+  # something went wrong. Let the user know what's up.
 
-  $sister_name = $self->{labels_hashref}->{$sister_label}->{name} 
+  return $self->{abstract}->report_error("add_rivalry failed: sister label '$sister_label' not found\n")
+    if ($sister_label && !$self->{labels}->{$sister_label});
+
+  # If the sister name was sent but isn't found, something 
+  # went wrong. Let the user know what's up.
+
+  return $self->{abstract}->report_error("add_rivalry failed: sister name '$sister_name' not found\n")
+    if ($sister_name && !$self->{names}->{$sister_name});
+
+  # Unless they sent a sister name or sister member or 
+  # rivalry, get the sister name using the sister label. 
+  # Then unless they sent a sister member or rivalry, get 
+  # the sister member using the sister name.
+
+  $sister_name = $self->{labels}->{$sister_label}->{name} 
     unless ($sister_name || $sister_member || $rivalry);
 
-  $sister_member = $self->{names_hashref}->{$sister_name} 
+  $sister_member = $self->{names}->{$sister_name} 
     unless ($sister_member || $rivalry);
 
   # Unless they sent a rivalry, create one if they did
@@ -347,12 +399,19 @@ sub add_rivalry {
 
   unless ($rivalry) {
 
-    # Double check that we found the members.
+    # If the brother field name isn't defined, something went
+    # wrong. Let the user know what's up.
 
-    return 0 unless ($brother_member &&
-                     $brother_field &&
-                     $sister_member &&
-                     $sister_field);
+    return $self->{abstract}->report_error("add_rivalry failed: brother field not sent\n")
+      unless defined $brother_field;
+
+    # If the sister field name isn't defined, something went
+    # wrong. Let the user know what's up.
+
+    return $self->{abstract}->report_error("add_rivalry failed: sister field not sent\n")
+      unless defined $sister_field;
+
+    # Create the new rivalry object using the info sent.
 
     $rivalry = new Relations::Family::Rivalry(-brother_member => $brother_member,
                                               -brother_field  => $brother_field,
@@ -365,14 +424,161 @@ sub add_rivalry {
   # the brother and sister so they know that they're related 
   # and how.
 
-  push @{$rivalry->{sister_member}->{brothers_ref}}, $rivalry;
-  push @{$rivalry->{brother_member}->{sisters_ref}}, $rivalry;
+  push @{$rivalry->{sister_member}->{brothers}}, $rivalry;
+  push @{$rivalry->{brother_member}->{sisters}}, $rivalry;
 
-  return 1;
+  # Return the rivlary because everything worked out.
+
+  return $rivalry;
 
 }
 
-# Gets the chosen items of a member. 
+
+
+### Adds a value held by one or more members. 
+
+sub add_value {
+
+  # Get the type we were sent
+
+  my ($self) = shift;
+
+  # Get all the arguments passed
+
+  my ($name,
+      $sql,
+      $member_names,
+      $member_labels,
+      $members,
+      $value) = rearrange(['NAME',
+                           'SQL',
+                           'MEMBER_NAMES',
+                           'MEMBER_LABELS',
+                           'MEMBERS',
+                           'VALUE'],@_);
+
+
+  # $name - The name of the value
+  # $sql - The SQL field/equation of the value
+  # $members_names - The names of the members that hold this value
+  # $member_labels - The labels of the members that hold this value
+  # $members - The members that hold this value
+  # $value - The value object already created
+
+  # Unless they sent names or members or a value, get the 
+  # names using the labels. 
+
+  unless ($member_names || $members || $value) {
+
+    # Declare an array ref to hold the new names
+
+    $member_names = to_array();
+
+    # Make sure the labels are in array format
+
+    $member_labels = to_array($member_labels);
+
+    # Go through each label
+
+    foreach my $member_label (@$member_labels) {
+
+      # If this label isn't part of the family, let 
+      # the user know something's wrong.
+
+      return $self->{abstract}->report_error("add_value failed: label, $member_label, not found\n")
+        unless $self->{labels}->{$member_label};
+
+      # This label's legit. Add its member's name 
+      # to the names array.
+
+      push @$member_names, $self->{labels}->{$member_label}->{name};
+
+    }
+
+  }
+
+  # Unless they sent members or a value, get the members 
+  # using the names.
+
+  unless ($members || $value) {
+
+    # Declare and array to hold the new members
+
+    $members = to_array();
+
+    # Make sure the names are in array format
+
+    $member_names = to_array($member_names);
+
+    # Go through each name
+
+    foreach my $member_name (@$member_names) {
+
+      # If this name isn't part of the family, let 
+      # the user know something's wrong.
+
+      return $self->{abstract}->report_error("add_value failed: name, $member_name, not found\n")
+        unless $self->{names}->{$member_name};
+
+      # This name's legit. Add its member to the 
+      # members array.
+
+      push @$members, $self->{names}->{$member_name};
+
+    }
+
+  }
+
+  # Unless they sent a value, create one.
+
+  unless ($value) {
+
+    # If the value name isn't defined, something went
+    # wrong. Let the user know what's up.
+
+    return $self->{abstract}->report_error("add_value failed: value name not sent\n")
+      unless defined $name;
+
+    # If the sql name isn't defined, something went
+    # wrong. Let the user know what's up.
+
+    return $self->{abstract}->report_error("add_value failed: value sql not sent\n")
+      unless defined $sql;
+
+    # If the value members aren't defined, something went
+    # wrong. Let the user know what's up.
+
+    return $self->{abstract}->report_error("add_value failed: members not sent\n")
+      unless defined $members;
+
+    # Create the new value with the info sent.
+
+    $value = new Relations::Family::Value(-name    => $name,
+                                          -sql     => $sql,
+                                          -members => $members);
+
+  }
+
+  # Double check to make sure we don't already have
+  # a value with the same name.
+
+  return $self->{abstract}->report_error("add_value failed: Dupe name: $value->{name}\n") 
+    if $self->{'values'}->{$value->{name}};
+
+  # Ok, everything checks out. Add the value to 
+  # this family.
+
+  $self->{'values'}->{$value->{name}} = $value;
+
+  # Return the value because everything's alright.
+
+  return $value;
+
+}
+
+
+
+### Gets the chosen items of a member. 
 
 sub get_chosen {
 
@@ -386,45 +592,63 @@ sub get_chosen {
       $member,
       $label) = rearrange(['NAME',
                            'MEMBER',
-                           'LABELS'],@_);
+                           'LABEL'],@_);
 
 
   # $name - The name of the member
   # $member - The member
   # $label - The label of the member
 
+  # If the label was sent but isn't found, something 
+  # went wrong. Let the user know what's up.
+
+  return $self->{abstract}->report_error("get_chosen failed: member label '$label' not found\n")
+    if ($label && !$self->{labels}->{$label});
+
+  # If the name was sent but isn't found, something 
+  # went wrong. Let the user know what's up.
+
+  return $self->{abstract}->report_error("get_chosen failed: member name '$name' not found\n")
+    if ($name && !$self->{names}->{$name});
+
   # Unless they sent a name or member, get the member name 
   # using the label. Then unless they sent a member, get 
   # the member using the name.
 
-  $name = $self->{labels_hashref}->{$label}->{name} unless ($name || $member);
-  $member = $self->{names_hashref}->{$name} unless ($member);
+  $name = $self->{labels}->{$label}->{name} unless ($name || $member);
+  $member = $self->{names}->{$name} unless ($member);
 
-  # Create a has to hold all the values and fill it.
+  # Create a hash ref to hold all the values.
 
-  my %chosen_hash = ();
+  my $chosen_hash = to_hash();
 
-  $chosen_hash{count} = $member->{chosen_count};
-  $chosen_hash{ids_string} = $member->{chosen_ids_string};
-  $chosen_hash{ids_arrayref} = $member->{chosen_ids_arrayref};
-  $chosen_hash{ids_selectref} = $member->{chosen_ids_selectref};
+  # Fill that hash
 
-  $chosen_hash{labels_string} = $member->{chosen_labels_string};
-  $chosen_hash{labels_arrayref} = $member->{chosen_labels_arrayref};
-  $chosen_hash{labels_hashref} = $member->{chosen_labels_hashref};
-  $chosen_hash{labels_selectref} = $member->{chosen_labels_selectref};
+  $chosen_hash->{count} = $member->{chosen_count};
+  $chosen_hash->{ids_string} = $member->{chosen_ids_string};
+  $chosen_hash->{ids_array} = $member->{chosen_ids_array};
+  $chosen_hash->{ids_select} = $member->{chosen_ids_select};
 
-  $chosen_hash{filter} = $member->{filter};
-  $chosen_hash{match} = $member->{match};
-  $chosen_hash{group} = $member->{group};
-  $chosen_hash{limit} = $member->{limit};
-  $chosen_hash{ignore} = $member->{ignore};
+  $chosen_hash->{labels_string} = $member->{chosen_labels_string};
+  $chosen_hash->{labels_array} = $member->{chosen_labels_array};
+  $chosen_hash->{labels_hash} = $member->{chosen_labels_hash};
+  $chosen_hash->{labels_select} = $member->{chosen_labels_select};
 
-  return \%chosen_hash;
+  $chosen_hash->{filter} = $member->{filter};
+  $chosen_hash->{match} = $member->{match};
+  $chosen_hash->{group} = $member->{group};
+  $chosen_hash->{limit} = $member->{limit};
+  $chosen_hash->{ignore} = $member->{ignore};
+
+  # Return the hash ref
+
+  return $chosen_hash;
 
 }
 
-# Sets the chosen items of a member. 
+
+
+### Sets the chosen items of a member. 
 
 sub set_chosen {
 
@@ -457,78 +681,69 @@ sub set_chosen {
                             'MEMBER'],@_);
  
   # $name - The name of the member
-  # $selects - The select ids from the select list
   # $ids - The selected ids
   # $labels - The selected labels
-  # $member - The member
-  # $label - The label of the member
-  # $filter - The filter for the labels
   # $match - Mathcing any of all selections
   # $group - Group inclusively or exclusively
+  # $filter - The filter for the labels
   # $limit - Limit settings
   # $ignore - Whether or not we're ignoring this member
+  # $selects - The select ids from a HTML select list
+  # $label - The label of the member
+  # $member - The member
+
+  # If the label was sent but isn't found, something 
+  # went wrong. Let the user know what's up.
+
+  return $self->{abstract}->report_error("set_chosen failed: member label '$label' not found\n")
+    if ($label && !$self->{labels}->{$label});
+
+  # If the name was sent but isn't found, something 
+  # went wrong. Let the user know what's up.
+
+  return $self->{abstract}->report_error("set_chosen failed: member name '$name' not found\n")
+    if ($name && !$self->{names}->{$name});
 
   # Unless they sent a name or member, get the member name 
   # using the label. Then unless they sent a member, get 
   # the member using the name.
 
-  $name = $self->{labels_hashref}->{$label}->{name} unless ($name || $member);
-  $member = $self->{names_hashref}->{$name} unless ($member);
+  $name = $self->{labels}->{$label}->{name} unless ($name || $member);
+  $member = $self->{names}->{$name} unless ($member);
 
-  # The chosen items can be set a number of ways. So we'll
-  # check to see how they sent the data, and set all the 
-  # other forms of storing the selections.
-
-  # First off, if there's no select and $ids isn't an array,
-  # we'll assume that $ids and $labels are strings and convert 
-  # them to arrays. This may not be true, but if it is, 
-  # everything works out. If it isn't, then we'll avoid some 
-  # errors (I think).
-
-  unless ($selects || ((ref($ids) eq 'ARRAY') && ((ref($labels) eq 'ARRAY') || (ref($labels) eq 'HASH')))) {
-
-    my @ids = split ',', $ids;
-    my @labels = split ',', $labels;
-
-    $ids = \@ids;
-    $labels = \@labels;
-
-  }
-
-  # If it's an array and has a tab in it, its in the select
-  # format.
+  # If the selects array was sent, then use that. A selects
+  # array is an array of "$id\t$label" values. This is done
+  # so we can see both the selected ids and labels return 
+  # from HTML select list.
 
   if ($selects) {
 
     # Set the count based on the number of selects, and
-    # and set the selectref for the selects to what was
-    # sent.
+    # and set the ids for the selects to what was sent.
 
-    $member->{chosen_count} = scalar @{$selects};
-    $member->{chosen_ids_selectref} = $selects;
+    $member->{chosen_count} = scalar @$selects;
+    $member->{chosen_ids_select} = $selects;
 
     # Empty out the ids array, the labels array,
     # the labels hash, and the labels select hash
     # because we're going to fill them.
 
-    @{$member->{chosen_ids_arrayref}} = ();
-    @{$member->{chosen_labels_arrayref}} = ();
-    %{$member->{chosen_labels_hashref}} = ();
-    %{$member->{chosen_labels_selectref}} = ();
+    $member->{chosen_ids_array} = to_array();
+    $member->{chosen_labels_array} = to_array();
+    $member->{chosen_labels_hash} = to_hash();
+    $member->{chosen_labels_select} = to_hash();
 
     # Go through all the selects and fill the other
     # storage forms.
 
-    my $select;
-
-    foreach $select (@{$selects}) {
+    foreach my $select (@$selects) {
 
       my ($id,$label) = split /\t/, $select;
 
-      push @{$member->{chosen_ids_arrayref}}, $id;
-      push @{$member->{chosen_labels_arrayref}}, $label;
-      $member->{chosen_labels_hashref}->{$id} = $label;
-      $member->{chosen_labels_selectref}->{$select} = $label;
+      push @{$member->{chosen_ids_array}}, $id;
+      push @{$member->{chosen_labels_array}}, $label;
+      $member->{chosen_labels_hash}->{$id} = $label;
+      $member->{chosen_labels_select}->{$select} = $label;
 
     }
 
@@ -537,68 +752,77 @@ sub set_chosen {
   # If the ids were set as an array and the labels were
   # sent as a hash.
 
-  elsif (ref($labels) eq 'HASH') {
+  elsif ((ref($ids) eq 'ARRAY') && (ref($labels) eq 'HASH')) {
 
     # Set the count based on the number of ids, and
-    # and set the arrayref for the ids and the hashref
+    # and set the array for the ids and the hashref
     # of the labels to what was sent.
 
-    $member->{chosen_count} = scalar @{$ids};
-    $member->{chosen_ids_arrayref} = $ids;
-    $member->{chosen_labels_hashref} = $labels;
+    $member->{chosen_count} = scalar @$ids;
+    $member->{chosen_ids_array} = $ids;
+    $member->{chosen_labels_hash} = $labels;
 
     # Empty out the ids select array, the labels array,
-    # the labels select hash.
+    # the labels select hash because we're going to 
+    # fill them.
 
-    @{$member->{chosen_ids_selectref}} = ();
-    @{$member->{chosen_labels_arrayref}} = ();
-    %{$member->{chosen_labels_selectref}} = ();
+    $member->{chosen_ids_select} = to_array();
+    $member->{chosen_labels_array} = to_array();
+    $member->{chosen_labels_select} = to_hash();
 
     # Go through all the ids and fill the other
     # storage forms.
 
-    my $id;
+    foreach my $id (@$ids) {
 
-    foreach $id (@{$ids}) {
-
-      push @{$member->{chosen_ids_selectref}}, "$id\t$labels->{$id}";
-      push @{$member->{chosen_labels_arrayref}}, $labels->{$id};
-      $member->{chosen_labels_selectref}->{"$id\t$labels->{$id}"} = $labels->{$id};
+      push @{$member->{chosen_ids_select}}, "$id\t$labels->{$id}";
+      push @{$member->{chosen_labels_array}}, $labels->{$id};
+      $member->{chosen_labels_select}->{"$id\t$labels->{$id}"} = $labels->{$id};
 
     }
 
   }
 
-  # If the ids were set as an array and the labels were
-  # sent as an array.
+  # Else $ids and $labels are arrays or strings
 
   else {
 
+    # Make sure $ids and $labels are array refs.
+
+    $ids = to_array($ids);
+    
+    # Split $labels by tabs, not commas.
+
+    unless (ref($labels)) {
+    
+      my @labels = split /\t/, $labels;
+      $labels = \@labels;
+
+    }
+
     # Set the count based on the number of ids, and
-    # and set the arrayref for the ids and the hashref
+    # and set the array for the ids and the hashref
     # of the labels to what was sent.
 
-    $member->{chosen_count} = scalar @{$ids};
-    $member->{chosen_ids_arrayref} = $ids;
-    $member->{chosen_labels_arrayref} = $labels;
+    $member->{chosen_count} = scalar @$ids;
+    $member->{chosen_ids_array} = $ids;
+    $member->{chosen_labels_array} = $labels;
 
     # Empty out the ids select array, the labels hash,
     # the labels select hash.
 
-    @{$member->{chosen_ids_selectref}} = ();
-    %{$member->{chosen_labels_hashref}} = ();
-    %{$member->{chosen_labels_selectref}} = ();
+    $member->{chosen_ids_select} = to_array();
+    $member->{chosen_labels_hash} = to_hash();
+    $member->{chosen_labels_select} = to_hash();
 
     # Go through all the ids and fill the other
     # storage forms.
 
-    my $i;
+    for (my $i = 0; $i < scalar @$ids; $i++) {
 
-    for ($i = 0; $i < scalar @{$ids}; $i++) {
-
-      push @{$member->{chosen_ids_selectref}}, "$ids->[$i]\t$labels->[$i]";
-      $member->{chosen_labels_hashref}->{$ids->[$i]} = $labels->[$i];
-      $member->{chosen_labels_selectref}->{"$ids->[$i]\t$labels->[$i]"} = $labels->[$i];
+      push @{$member->{chosen_ids_select}}, "$ids->[$i]\t$labels->[$i]";
+      $member->{chosen_labels_hash}->{$ids->[$i]} = $labels->[$i];
+      $member->{chosen_labels_select}->{"$ids->[$i]\t$labels->[$i]"} = $labels->[$i];
 
     }
 
@@ -606,8 +830,8 @@ sub set_chosen {
 
   # Set the strings accordingly.
 
-  $member->{chosen_ids_string} = join ',', @{$member->{chosen_ids_arrayref}};
-  $member->{chosen_labels_string} = join ',', @{$member->{chosen_labels_arrayref}};
+  $member->{chosen_ids_string} = join ',', @{$member->{chosen_ids_array}};
+  $member->{chosen_labels_string} = join "\t", @{$member->{chosen_labels_array}};
 
   # Grab the other settings if sent.
 
@@ -623,7 +847,10 @@ sub set_chosen {
 
 }
 
-# Gets wheter a list needs to be queried. 
+
+
+### Gets whether a member needs to be involved in 
+### a query. 
 
 sub get_needs {
 
@@ -638,32 +865,31 @@ sub get_needs {
       $needed,
       $skip) = (@_);
 
-  # $member - The member
-  # $needs - Hash of needs
-  # $needed - Hash ref of lists
-  # $skip - Skip the sent member
+  # $member - The member being evaluated
+  # $needs - Hash ref of members needs by name
+  # $needed - Hash ref of members evaluated by name
+  # $skip - Skip this members needs
 
   # If we've got stuff selected, and we're not to be 
-  # ignored, then we need a query.
+  # ignored, then we need to be in a query.
 
   my $need = ($member->{chosen_count} > 0) && !$member->{ignore} && !$skip;
 
-  # Add ourselves to the hash, sohwing that we've been
-  # evaluated for a need to query
+  # Add ourselves to the hash, showing that we've been
+  # evaluated for a need to be in a query.
 
   $needed->{$member->{name}} = 1;
 
   # Go thorugh all our relatives, and || their need with 
   # ours, unless they've already been evaluated for 
-  # need. We || them because if they need a query, and 
-  # they haven't been check yet, then we need a query
-  # to connect them to the central member.
-
-  my ($lineage,$rivalry);
+  # need. We || them because if they need to be in a query, 
+  # and they haven't been checked yet, then we need to be in 
+  # a query to connect them to the original member that needs 
+  # a query.
 
   # Parents
 
-  foreach $lineage (@{$member->{parents_ref}}) {
+  foreach my $lineage (@{$member->{parents}}) {
 
     next if $needed->{$lineage->{parent_member}->{name}};
 
@@ -673,7 +899,7 @@ sub get_needs {
 
   # Children
 
-  foreach $lineage (@{$member->{children_ref}}) {
+  foreach my $lineage (@{$member->{children}}) {
 
     next if $needed->{$lineage->{child_member}->{name}};
 
@@ -683,7 +909,7 @@ sub get_needs {
 
   # Brothers
 
-  foreach $rivalry (@{$member->{brothers_ref}}) {
+  foreach my $rivalry (@{$member->{brothers}}) {
 
     next if $needed->{$rivalry->{brother_member}->{name}};
 
@@ -693,7 +919,7 @@ sub get_needs {
 
   # Sisters
 
-  foreach $rivalry (@{$member->{sisters_ref}}) {
+  foreach my $rivalry (@{$member->{sisters}}) {
 
     next if $needed->{$rivalry->{sister_member}->{name}};
 
@@ -708,9 +934,12 @@ sub get_needs {
 
 }
 
-# Gets a member's chosen values. 
 
-sub get_values {
+
+### Gets a member's chosen id values based on what's
+### been selected and what its match value is.
+
+sub get_ids {
 
   # Get the type we were sent
 
@@ -719,143 +948,138 @@ sub get_values {
   # Get all the arguments passed
 
   my ($member,
-      $values,
-      $valued,
+      $ids,
+      $ided,
       $no_all,
       $skip) = (@_);
 
   # $member - The member
-  # $values - Array of hashes of values
-  # $valued - Hash ref of lists
-  # $can_all - Whether or not we can match all
-  # $skip - Skip the sent member
+  # $ids - Array of hashes of id values
+  # $ided - Hash ref of lists already id'ed
+  # $no_all - Whether or not we can match all
+  # $skip - Skip the member being currently checked.
 
   # If we've got stuff selected, we're not to be ignored, 
-  # and we're not being skipped then we need to be valued.
+  # and we're not being skipped then we need to be ided.
 
   if (($member->{chosen_count} > 0) && !$member->{ignore} && !$skip) {
 
     # Unless we're set to match all, and we're allowed to
-    # match all values.
+    # match all ids.
 
     unless ($member->{match} && !$no_all) {
 
-      # Then we're just going to add our values to the 
+      # Then we're just going to add our ids to the 
       # values array of hashes.
 
-      # Declare a row for counting.
+      # Go through each row of ids
 
-      my $row; 
+      foreach my $row (@$ids) {
 
-      # Go through each row of values
-
-      foreach $row (@{$values}) {
-
-        # Put our values in keyed by our name
+        # Put our ids in keyed by our name
 
         $row->{$member->{name}} = $member->{chosen_ids_string};
 
       }
 
-    # If we're to match all
+    # If we're to match all, then we need to increase the
+    # rows of values X times, where X is the number of our 
+    # selected ids.
 
     } else {
 
-      # Declare and id for counting, a row of values, as well 
-      # as a new array for the array of hashes of values.
+      # Declare a new array for the array of hashes of 
+      # ids.
 
-      my $id;
-      my $row;
-      my @new_values = ();
+      my $new_ids = to_array();
 
       # Go through each row in the values
 
-      foreach $row (@{$values}) {
+      foreach my $row (@$ids) {
 
         # Go through each of our ids
 
-        foreach $id (@{$member->{chosen_ids_arrayref}}) {
+        foreach my $id (@{$member->{chosen_ids_array}}) {
 
-          # Create a new row from the current values row,
+          # Create a new row from the current ids row,
           # assign our current id to it, and add it to the
-          # new array of hashes of values
+          # new array of hashes of ids
 
-          my %row = %{$row};
-
-          my $key;
+          my %row = %$row;
 
           $row{$member->{name}} = $id;
 
-          push @new_values, \%row;
+          push @$new_ids, \%row;
 
         }
 
       }
 
-      # Point values to our new array.
+      # Point the old ids to our new ids.
 
-      $values = \@new_values;
+      $ids = $new_ids;
 
     }
 
   }
 
   # Add ourselves to the hash, showing that we've
-  # added our values, and are thus valued.
+  # added our ids, and are thus ided.
 
-  $valued->{$member->{name}} = 1;
+  $ided->{$member->{name}} = 1;
 
-  # Go thorugh all our relatives, add add their values to\
-  # values, unless they've already been evaluated for 
-  # values. 
-
-  my ($lineage,$rivalry);
+  # Go through all our relatives, add add their ids to
+  # ids, unless they've already been id'ed. 
 
   # Parents
 
-  foreach $lineage (@{$member->{parents_ref}}) {
+  foreach my $lineage (@{$member->{parents}}) {
 
-    next if $valued->{$lineage->{parent_member}->{name}};
+    next if $ided->{$lineage->{parent_member}->{name}};
 
-    $values = $self->get_values($lineage->{parent_member},$values,$valued);
+    $ids = $self->get_ids($lineage->{parent_member},$ids,$ided);
 
   }
 
   # Children
 
-  foreach $lineage (@{$member->{children_ref}}) {
+  foreach my $lineage (@{$member->{children}}) {
 
-    next if $valued->{$lineage->{child_member}->{name}};
+    next if $ided->{$lineage->{child_member}->{name}};
 
-    $values = $self->get_values($lineage->{child_member},$values,$valued,$no_all);
+    $ids = $self->get_ids($lineage->{child_member},$ids,$ided,$no_all);
 
   }
 
   # Brothers
 
-  foreach $rivalry (@{$member->{brothers_ref}}) {
+  foreach my $rivalry (@{$member->{brothers}}) {
 
-    next if $valued->{$rivalry->{brother_member}->{name}};
+    next if $ided->{$rivalry->{brother_member}->{name}};
 
-    $values = $self->get_values($rivalry->{brother_member},$values,$valued,$no_all);
+    $ids = $self->get_ids($rivalry->{brother_member},$ids,$ided,$no_all);
 
   }
 
   # Sisters
 
-  foreach $rivalry (@{$member->{sisters_ref}}) {
+  foreach my $rivalry (@{$member->{sisters}}) {
 
-    next if $valued->{$rivalry->{sister_member}->{name}};
+    next if $ided->{$rivalry->{sister_member}->{name}};
 
-    $values = $self->get_values($rivalry->{sister_member},$values,$valued,$no_all);
+    $ids = $self->get_ids($rivalry->{sister_member},$ids,$ided,$no_all);
 
   }
 
-  return $values;
+  # Return the collection of ids we have. 
+
+  return $ids;
 
 }
 
-# Gets a member's contribution to the query. 
+
+
+### Gets a member's contribution to the query. 
 
 sub get_query {
 
@@ -873,13 +1097,13 @@ sub get_query {
 
   # $member - The member
   # $query - The query to build
-  # $row - query hash to use
-  # $needs - Hash of who needs to be queried
-  # $queried - Hash of member's have been queried
+  # $row - The current $ids row to use
+  # $needs - Hash of who needs to be in the query
+  # $queried - Hash of members that have added to the query
 
   # Our table is needed in the query.
 
-  $query->add(-from => $member->{table});
+  $query->add(-from => {$member->{alias} => "$member->{database}.$member->{table}"});
 
   # If we have stuff chosen, then our chosen ids 
   # need to be in the query. Make sure we exclude
@@ -889,8 +1113,7 @@ sub get_query {
 
     my $group = $member->{group} ? ' not' : '';
 
-    my $member_id = "$member->{database}." .
-                    "$member->{table}." . 
+    my $member_id = "$member->{alias}." . 
                     "$member->{id_field}";
 
     $query->add(-where => "$member_id$group in ($row->{$member->{name}})");
@@ -898,29 +1121,25 @@ sub get_query {
   }
 
   # Add ourselves to the hash, showing that we've
-  # added our query, and are thus queried.
+  # added to the query.
 
   $queried->{$member->{name}} = 1;
 
-  # Go thorugh all our relatives, add add their query to
-  # query, unless they've already been queried or they just 
-  # don't need to be queried.
-
-  my ($lineage,$rivalry);
+  # Go thorugh all our relatives, add add their query bits to
+  # the query, unless they've already done that or they just 
+  # don't need to.
 
   # Parents
 
-  foreach $lineage (@{$member->{parents_ref}}) {
+  foreach my $lineage (@{$member->{parents}}) {
 
     next if ($queried->{$lineage->{parent_member}->{name}} || 
               !$needs->{$lineage->{parent_member}->{name}});
 
-    my $parent_field = "$lineage->{parent_member}->{database}." .
-                       "$lineage->{parent_member}->{table}." . 
+    my $parent_field = "$lineage->{parent_member}->{alias}." .
                        "$lineage->{parent_field}";
 
-    my $child_field = "$lineage->{child_member}->{database}." .
-                      "$lineage->{child_member}->{table}." . 
+    my $child_field = "$lineage->{child_member}->{alias}." .
                       "$lineage->{child_field}";
 
     $query->add(-where => "$child_field=$parent_field");
@@ -931,17 +1150,15 @@ sub get_query {
 
   # Children
 
-  foreach $lineage (@{$member->{children_ref}}) {
+  foreach my $lineage (@{$member->{children}}) {
 
     next if ($queried->{$lineage->{child_member}->{name}} || 
               !$needs->{$lineage->{child_member}->{name}});
 
-    my $parent_field = "$lineage->{parent_member}->{database}." .
-                       "$lineage->{parent_member}->{table}." . 
+    my $parent_field = "$lineage->{parent_member}->{alias}." .
                        "$lineage->{parent_field}";
 
-    my $child_field = "$lineage->{child_member}->{database}." .
-                      "$lineage->{child_member}->{table}." . 
+    my $child_field = "$lineage->{child_member}->{alias}." .
                       "$lineage->{child_field}";
 
     $query->add(-where => "$parent_field=$child_field");
@@ -952,17 +1169,15 @@ sub get_query {
 
   # Brothers
 
-  foreach $rivalry (@{$member->{brothers_ref}}) {
+  foreach my $rivalry (@{$member->{brothers}}) {
 
     next if ($queried->{$rivalry->{brother_member}->{name}} || 
               !$needs->{$rivalry->{brother_member}->{name}});
 
-    my $brother_field = "$rivalry->{brother_member}->{database}." .
-                        "$rivalry->{brother_member}->{table}." . 
+    my $brother_field = "$rivalry->{brother_member}->{alias}." .
                         "$rivalry->{brother_field}";
 
-    my $sister_field = "$rivalry->{sister_member}->{database}." .
-                       "$rivalry->{sister_member}->{table}." . 
+    my $sister_field = "$rivalry->{sister_member}->{alias}." .
                        "$rivalry->{sister_field}";
 
     $query->add(-where => "$sister_field=$brother_field");
@@ -973,17 +1188,15 @@ sub get_query {
 
   # Sisters
 
-  foreach $rivalry (@{$member->{sisters_ref}}) {
+  foreach my $rivalry (@{$member->{sisters}}) {
 
     next if ($queried->{$rivalry->{sister_member}->{name}} || 
               !$needs->{$rivalry->{sister_member}->{name}});
 
-    my $brother_field = "$rivalry->{brother_member}->{database}." .
-                        "$rivalry->{brother_member}->{table}." . 
+    my $brother_field = "$rivalry->{brother_member}->{alias}." .
                         "$rivalry->{brother_field}";
 
-    my $sister_field = "$rivalry->{sister_member}->{database}." .
-                       "$rivalry->{sister_member}->{table}." . 
+    my $sister_field = "$rivalry->{sister_member}->{alias}." .
                        "$rivalry->{sister_field}";
 
     $query->add(-where => "$brother_field=$sister_field");
@@ -994,8 +1207,10 @@ sub get_query {
 
 }
 
-# Gets the available records from a 
-# member based on other members
+
+
+### Gets the available records for a member 
+### based on other members selections.
 
 sub get_available {
 
@@ -1018,12 +1233,24 @@ sub get_available {
   # $label - The label of the member
   # $focus - Whether to use one's own chosen ids
 
+  # If the label isn't found, something went
+  # wrong. Let the user know what's up.
+
+  return $self->{abstract}->report_error("get_available failed: member label '$label' not found\n")
+    if ($label && !$self->{labels}->{$label});
+
+  # If the name isn't found, something went
+  # wrong. Let the user know what's up.
+
+  return $self->{abstract}->report_error("get_available failed: member name '$name' not found\n")
+    if ($name && !$self->{names}->{$name});
+
   # Unless they sent a name or member, get the member name 
   # using the label. Then unless they sent a member, get 
   # the member using the name.
 
-  $name = $self->{labels_hashref}->{$label}->{name} unless ($name || $member);
-  $member = $self->{names_hashref}->{$name} unless ($member);
+  $name = $self->{labels}->{$label}->{name} unless ($name || $member);
+  $member = $self->{names}->{$name} unless ($member);
 
   # Create a query to hold the avaiable items. Base it off
   # of what was specified at the creation of the current 
@@ -1047,21 +1274,14 @@ sub get_available {
 
   }
   
-  # Now we need to see if we need to query any of the 
-  # members, starting at this member. So create the hashes 
+  # Now we need to see if any of the other need to add to
+  # the query, starting at this member. So create the hashes 
   # to hold the needs. The needs is just a hashref keyed
   # by the member name and set to whether the member needs
-  # to be queried.
+  # to be queried, 1.
   
-  my %needs = ();
-  my %needed = ();
-
-  # We also have to keep track of what's been checked 
-  # already, so we'll create a hash and key with member
-  # name set to 1 if they've been checked.
-
-  my $needs = \%needs;
-  my $needed = \%needed;
+  my $needs = to_hash();
+  my $needed = to_hash();
 
   # Now call the recursive get_needs, starting at the 
   # current member. Make sure the first member's skipped 
@@ -1070,55 +1290,55 @@ sub get_available {
 
   my $need = $self->get_needs($member,$needs,$needed,1);
 
-  # If there's a need to query, let's get all the values 
-  # and build a query.
+  # If there's a need to have other members contribute to 
+  # the query.
 
   if ($need) {
 
-    # Create an empty vales set. A values set is an arrayref
-    # of hashrefs of selected ids key by the member name. To
-    # create an empty values set, we need an empty hash's 
-    # reference in the first member of an array being pointed
-    # to. 
+    # Create an empty ids set. A ids set is an array ref
+    # of hashrefs of selected ids, keyed by the member name. To
+    # create an empty ids set, we need an empty hash's 
+    # reference in the first member of the array ref. 
 
-    my %row = ();
-    my @values = ();
-    push @values, \%row;
-    my $values = \@values;
+    my $ids = to_array();
+    push @$ids, to_hash();
 
     # Like get_needs, we also need a hash for keeping track 
-    # of which members we've valued. 
+    # of which members we've ided. 
 
-    my %valued = ();
-    my $valued = \%valued;
+    my $ided = to_hash();
 
-    # Call the recursive gets values. Skip the current member
+    # Call the recursive gets ids. Skip the current member
     # and don't allow match all's on the member and all their
     # connected members except parents.
 
-    $values = $self->get_values($member,$values,$valued,1,1 && !$focus);
+    $ids = $self->get_ids($member,$ids,$ided,1,1 && !$focus);
 
-    # Go through all the values sets found and create a 
-    # temporary table for each set.
+    # Go through all the ids sets found and create a 
+    # temporary table for each set. Start the set 
+    # suffixes at 0.
 
-    my ($row,$set);
-
-    $set = 0;
+    my $set = 0;
 
     my $id_field = "$member->{database}.$member->{table}.$member->{id_field}";
 
-    foreach $row (@{$values}) {
+    foreach my $row (@$ids) {
 
       # Now we have to make a hash to hold who's been queried
       # and who hasn't. 
 
-      my %queried = ();
-      my $queried = \%queried;
+      my $queried = to_hash();
 
-      # Create a query object for this values set.
+      # Create a query object for this values set, adding our
+      # id to the select clause.
 
       my $row_query = new Relations::Query(-select => {'id_field' => $id_field});
 
+      # Add distinct to the first part of the query
+      # to make sure we only get one of each id.
+
+      $row_query->{'select'} = 'distinct ' . $row_query->{'select'};
+      
       # Run the recursive get query. 
 
       $self->get_query($member,$row_query,$row,$needs,$queried);
@@ -1127,11 +1347,20 @@ sub get_available {
 
       my $table = $member->{name} . '_query_' . $set;
       my $create = "create temporary table $table ";
-      my $condition = "$member->{table}.$member->{id_field}=$table.id_field";
+      my $condition = "$member->{alias}.$member->{id_field}=$table.id_field";
+      my $row_string = $create . $row_query->get();
 
-      $self->{abstract}->run_query(-query => "drop table if exists $table");
+      # If we can't drop the table, something went
+      # wrong. Let the user know what's up.
 
-      $self->{abstract}->run_query(-query => $create . $row_query->get());
+      return $self->{abstract}->report_error("get_available failed: couldn't drop table\n")
+        unless $self->{abstract}->run_query("drop table if exists $table");
+
+      # If we can't drop the table, something went
+      # wrong. Let the user know what's up.
+
+      return $self->{abstract}->report_error("get_available failed: couldn't query row: $row_string\n")
+        unless $self->{abstract}->run_query($row_string);
 
       # Add this temp table and requirement to the 
       # avaiable query, and increase the set var.
@@ -1145,70 +1374,72 @@ sub get_available {
 
   }
 
-  # Execute the main query
+  # Prepare and execute the main query
 
-  my $sth = $self->{abstract}->{dbh}->prepare($available_query->get());
+  my $available_string = $available_query->get();
 
-  $sth->execute() or print "Available query failed: " . $available_query->get() . "\n";
+  my $sth = $self->{abstract}->{dbh}->prepare($available_string);
 
-  # Clear out the member's avaiable stuff.
+  # If we can't query available, something went
+  # wrong. Let the user know what's up.
 
-  my @available_ids_array = ();
-  my @available_ids_select = ();
-  my @available_labels_array = ();
-  my %available_labels_hash = ();
-  my %available_labels_select = ();
+  return $self->{abstract}->report_error("get_available failed: couldn't query available: $available_string\n")
+    unless $sth->execute();
+
+  # Clear out the member's available stuff.
 
   $member->{available_count} = 0;
-  $member->{available_ids_arrayref} = \@available_ids_array;
-  $member->{available_ids_selectref} = \@available_ids_select;
+  $member->{available_ids_array} = to_array();
+  $member->{available_ids_select} = to_array();
 
-  $member->{available_labels_arrayref} = \@available_labels_array;
-  $member->{available_labels_hashref} = \%available_labels_hash;
-  $member->{available_labels_selectref} = \%available_labels_select;
+  $member->{available_labels_array} = to_array();
+  $member->{available_labels_hash} = to_hash();
+  $member->{available_labels_select} = to_hash();
 
   # Populate all members
 
-  my ($hash_ref);
+  while (my $hash_ref = $sth->fetchrow_hashref) {
 
-  while ($hash_ref = $sth->fetchrow_hashref) {
+    push @{$member->{available_ids_array}}, $hash_ref->{id};
+    push @{$member->{available_ids_select}}, "$hash_ref->{id}\t$hash_ref->{label}";
 
-    $member->{available_count}++;
-
-    push @{$member->{available_ids_arrayref}}, $hash_ref->{id};
-    push @{$member->{available_ids_selectref}}, "$hash_ref->{id}\t$hash_ref->{label}";
-
-    push @{$member->{available_labels_arrayref}}, $hash_ref->{label};
-    $member->{available_labels_hashref}->{$hash_ref->{id}} = $hash_ref->{label};
-    $member->{available_labels_selectref}->{"$hash_ref->{id}\t$hash_ref->{label}"} = $hash_ref->{label};
+    push @{$member->{available_labels_array}}, $hash_ref->{label};
+    $member->{available_labels_hash}->{$hash_ref->{id}} = $hash_ref->{label};
+    $member->{available_labels_select}->{"$hash_ref->{id}\t$hash_ref->{label}"} = $hash_ref->{label};
 
   }
+
+  # Grab the count 
+
+  $member->{available_count} = scalar @{$member->{available_ids_array}};
 
   $sth->finish();
 
   # Create the info hash to return and fill it
 
-  my %available = ();
+  my $available = to_hash();
 
-  $available{filter} = $member->{filter};
-  $available{match} = $member->{match};
-  $available{group} = $member->{group};
-  $available{limit} = $member->{limit};
-  $available{ignore} = $member->{ignore};
-  $available{count} = $member->{available_count};
-  $available{ids_arrayref} = $member->{available_ids_arrayref};
-  $available{ids_selectref} = $member->{available_ids_selectref};
-  $available{labels_arrayref} = $member->{available_labels_arrayref};
-  $available{labels_hashref} = $member->{available_labels_hashref};
-  $available{labels_selectref} = $member->{available_labels_selectref};
+  $available->{filter} = $member->{filter};
+  $available->{match} = $member->{match};
+  $available->{group} = $member->{group};
+  $available->{limit} = $member->{limit};
+  $available->{ignore} = $member->{ignore};
+  $available->{count} = $member->{available_count};
+  $available->{ids_array} = $member->{available_ids_array};
+  $available->{ids_select} = $member->{available_ids_select};
+  $available->{labels_array} = $member->{available_labels_array};
+  $available->{labels_hash} = $member->{available_labels_hash};
+  $available->{labels_select} = $member->{available_labels_select};
 
-  return \%available;
+  return $available;
 
 }
 
-# Sets chosen items from available items, using the
-# members current chosen ids, as well as other members
-# chosen ids.
+
+
+### Sets chosen items from available items, using the
+### members current chosen ids, as well as other members
+### chosen ids.
 
 sub choose_available {
 
@@ -1228,12 +1459,24 @@ sub choose_available {
   # $member - The member
   # $label - The label of the member
 
+  # If the label isn't found, something went
+  # wrong. Let the user know what's up.
+
+  return $self->{abstract}->report_error("choose_available failed: member label '$label' not found\n")
+    if ($label && !$self->{labels}->{$label}->{name});
+
+  # If the name isn't found, something went
+  # wrong. Let the user know what's up.
+
+  return $self->{abstract}->report_error("choose_available failed: member name '$name' not found\n")
+    if ($name && !$self->{names}->{$name});
+
   # Unless they sent a name or member, get the member name 
   # using the label. Then unless they sent a member, get 
   # the member using the name.
 
-  $name = $self->{labels_hashref}->{$label}->{name} unless ($name || $member);
-  $member = $self->{names_hashref}->{$name} unless ($member);
+  $name = $self->{labels}->{$label}->{name} unless ($name || $member);
+  $member = $self->{names}->{$name} unless ($member);
 
   # Get the available members ids, including using the 
   # member's own ids in the query.
@@ -1244,13 +1487,458 @@ sub choose_available {
   # the available ids and labels.
 
   return $self->set_chosen(-member => $member,
-                           -ids    => $available->{ids_arrayref},
-                           -labels => $available->{labels_hashref},
+                           -ids    => $available->{ids_array},
+                           -labels => $available->{labels_hash},
                            -filter => $member->{filter},
                            -match  => $member->{match},
                            -group  => $member->{group},
                            -limit  => $member->{limit},
                            -ignore => $member->{ignore});
+
+}
+
+
+
+### Gets who'll be attending a reunion
+
+sub get_visits {
+
+  # Get the type we were sent
+
+  my ($self) = shift;
+
+  # Get all the arguments passed
+
+  my ($member,
+      $visits,
+      $visited,
+      $ids,
+      $valued) = (@_);
+
+  # $member - The member
+  # $visits - Hash of who'll visit
+  # $visited - Hash ref of who's been checked
+  # $ids - IDs to use in the reunion
+  # $valued - Hash ref of reunion values' members
+
+  # If we're valued or our ids are playing a role 
+
+  my $visit = $valued->{$member->{name}} || defined $ids->{$member->{name}};
+
+  # Add ourselves to the hash, showing that we've been
+  # evaluated for a visit to the reunion
+
+  $visited->{$member->{name}} = 1;
+
+  # Go through all our relatives, and || their visit with 
+  # ours, unless they've already been evaluated for a
+  # visit. We || them because if they need to be part of 
+  # the reunion, and they haven't been checked yet, then we 
+  # need to connect them to the central member of the
+  # reunion.
+
+  # Parents
+
+  foreach my $lineage (@{$member->{parents}}) {
+
+    next if $visited->{$lineage->{parent_member}->{name}};
+
+    $visit = $self->get_visits($lineage->{parent_member},$visits,$visited,$ids,$valued) || $visit;
+
+  }
+
+  # Children
+
+  foreach my $lineage (@{$member->{children}}) {
+
+    next if $visited->{$lineage->{child_member}->{name}};
+
+    $visit = $self->get_visits($lineage->{child_member},$visits,$visited,$ids,$valued) || $visit;
+
+  }
+
+  # Brothers
+
+  foreach my $rivalry (@{$member->{brothers}}) {
+
+    next if $visited->{$rivalry->{brother_member}->{name}};
+
+    $visit = $self->get_visits($rivalry->{brother_member},$visits,$visited,$ids,$valued) || $visit;
+
+  }
+
+  # Sisters
+
+  foreach my $rivalry (@{$member->{sisters}}) {
+
+    next if $visited->{$rivalry->{sister_member}->{name}};
+
+    $visit = $self->get_visits($rivalry->{sister_member},$visits,$visited,$ids,$valued) || $visit;
+
+  }
+
+  # Return whether we're to visit, and set the
+  # visits hash.
+
+  $visits->{$member->{name}} = $visit;
+
+}
+
+
+
+### Gets the reunion for the family.
+
+sub get_reunion {
+
+  # Get the type we were sent
+
+  my ($self) = shift;
+
+  # Get all the arguments passed
+
+  my ($data,
+      $use_names,
+      $group_by,
+      $order_by,
+      $start_name,
+      $query,
+      $use_labels,
+      $use_members,
+      $start_label,
+      $start_member) = rearrange(['DATA',
+                                  'USE_NAMES',
+                                  'GROUP_BY',
+                                  'ORDER_BY',
+                                  'START_NAME',
+                                  'QUERY',
+                                  'USE_LABELS',
+                                  'USE_MEMBERS',
+                                  'START_LABEL',
+                                  'START_MEMBER'],@_);
+                             
+  # $data - The values of the data
+  # $use_names -  Use IDs from these members (by name)
+  # $group_by - Group by values
+  # $order_by -Group by values
+  # $start_name - Name of member to start from
+  # $query - Query to start out with
+  # $use_labels -  Use IDs from these members (by label)
+  # $use_members -  Use IDs from these members
+  # $start_label - Label of member to start from
+  # $start_member - Member to start from
+
+  # Look up use names from use labels unless use names 
+  # or use members is set, or they didn't send use labels
+
+  unless ($use_names || $use_members || !$use_labels) {
+
+    # Convert use labels to an array, and 
+    # set use names to an empty array.
+
+    $use_labels = to_array($use_labels);
+    $use_names = to_array();
+
+    # Go through each use label
+
+    foreach my $use_label (@$use_labels) {
+
+      # If this use label isn't found, something went
+      # wrong. Let the user know what's up.
+
+      return $self->{abstract}->report_error("get_reunion failed: use member label '$use_label' not found\n")
+        unless $self->{labels}->{$use_label}->{name};
+
+      # Add this member's name to use_names
+
+      push @$use_names, $self->{labels}->{$use_label}->{name};
+
+    }
+
+  }
+ 
+  # Look up use members from use names unless use 
+  # members is set, or they didn't send use names
+
+  unless ($use_members || !$use_names) {
+
+    # Convert use names to an array, and 
+    # set use members to an empty array.
+
+    $use_names = to_array($use_names);
+    $use_members = to_array();
+
+    # Go through each use name
+
+    foreach my $use_name (@$use_names) {
+
+      # If this use name isn't found, something went
+      # wrong. Let the user know what's up.
+
+      return $self->{abstract}->report_error("get_reunion failed: use member name '$use_name' not found\n")
+        unless $self->{names}->{$use_name};
+
+      # Add this member to use_members
+
+      push @$use_members, $self->{names}->{$use_name};
+
+    }
+
+  }
+
+  # Create an empty hash of ids to hold the ids
+  # to use in the reunion. 
+
+  my $ids = to_hash();
+
+  # Look up ids from use members if they sent use 
+  # members, and key them by name.
+
+  if ($use_members) {
+
+    foreach my $use_member (@$use_members) {
+
+      # If this member has stuff set and its not
+      # to be ignored, use its selected ids.
+
+      $ids->{$use_member->{name}} = $use_member->{chosen_ids_string} 
+        if (($use_member->{chosen_count} > 0) && !$use_member->{ignore});
+
+    }
+
+  }
+ 
+  # If the start label isn't found, something went
+  # wrong. Let the user know what's up.
+
+  return $self->{abstract}->report_error("get_reunion failed: start member label '$start_label' not found\n")
+    if ($start_label && !$self->{labels}->{$start_label}->{name});
+
+  # If the start name isn't found, something went
+  # wrong. Let the user know what's up.
+
+  return $self->{abstract}->report_error("get_reunion failed: start member name '$start_name' not found\n")
+    if ($start_name && !$self->{names}->{$start_name});
+
+  # Unless they sent a name or member, get the member name 
+  # using the label. Then unless they sent a member, get 
+  # the member using the name.
+
+  $start_name = $self->{labels}->{$start_label}->{name} unless ($start_name || $start_member);
+  $start_member = $self->{names}->{$start_name} unless ($start_member);
+
+  # Make sure all values are in array form
+  
+  $data = to_array($data);
+  $group_by = to_array($group_by);
+  $order_by = to_array($order_by);
+
+  # Create a query if they didn't send one
+
+  $query = new Relations::Query() unless $query;
+
+  # Create a hash for all the values needed
+
+  my $values = to_hash();
+
+  # Create a hash to hold all the members 
+  # that have a needed value, also create
+  # the select part of the query as well 
+  # as arrays to hold the quoted values
+  # for the group by and order by clause
+
+  my $valued = to_hash();
+  my $select = to_hash();
+  my $quoted_group_by = to_array();
+  my $quoted_order_by = to_array();
+
+  # Go through all the group by field values.
+
+  foreach my $value (@$group_by) {
+
+    # Go through each of this values members
+
+    foreach my $member (@{$self->{'values'}->{$value}->{members}}) {
+
+      # This member is valued since we need it
+      # to calculate this value. 
+
+      $valued->{$member->{name}} = 1;
+      
+      # Add this value to the select hash, with 
+      # the key being the name with quotes around 
+      # in case it has spaces in it, and the value
+      # being the sql part of the value. 
+
+      $select->{$self->{abstract}->{dbh}->quote($self->{'values'}->{$value}->{name})} = $self->{'values'}->{$value}->{sql}; 
+
+    }
+
+    # Add this value, with quotes, to the quoted
+    # group by array.
+
+    push @$quoted_group_by, $self->{abstract}->{dbh}->quote($self->{'values'}->{$value}->{name}); 
+
+  }
+
+  # Go through all the order by field values.
+
+  foreach my $value (@$order_by) {
+
+    # There might be a desc or asc in the order by
+    # value. Let's pop it out for now and add it 
+    # later.
+
+    my $order = ($value =~ s/( desc| asc)//g) ? $1 : '';
+
+    # Go through each of this values members
+
+    foreach my $member (@{$self->{'values'}->{$value}->{members}}) {
+
+      # This member is valued since we need it
+      # to calculate this value. 
+
+      $valued->{$member->{name}} = 1; 
+
+      # Add this value to the select hash, with 
+      # the key being the name with quotes around 
+      # in case it has spaces in it, and the value
+      # being the sql part of the value. 
+
+      $select->{$self->{abstract}->{dbh}->quote($self->{'values'}->{$value}->{name})} = $self->{'values'}->{$value}->{sql}; 
+
+    }
+
+    # Add this value, with quotes, to the quoted
+    # order by array, complete with the sort 
+    # direction.
+
+    push @$quoted_order_by, $self->{abstract}->{dbh}->quote($self->{'values'}->{$value}->{name}) . $order; 
+
+    # Add the sort direction back to the original
+    # value as well cuz we don't want to change
+    # what the user sent.
+
+    $value .= $order;
+
+  }
+
+  # Go through all the data field values.
+
+  foreach my $value (@$data) {
+
+    # Go through each of this values members
+
+    foreach my $member (@{$self->{'values'}->{$value}->{members}}) {
+
+      # This member is valued since we need it
+      # to calculate this value. 
+
+      $valued->{$member->{name}} = 1; 
+
+      # Add this value to the select hash, with 
+      # the key being the name with quotes around 
+      # in case it has spaces in it, and the value
+      # being the sql part of the value. 
+
+      $select->{$self->{abstract}->{dbh}->quote($self->{'values'}->{$value}->{name})} = $self->{'values'}->{$value}->{sql}; 
+
+    }
+
+  }
+
+  # If we value nothing, something went wrong
+  # with the reunion.
+
+  return $self->{abstract}->report_error("get_reunion failed: nothing valued\n")
+    unless scalar %$valued;
+ 
+  # Unless we were able to lookup a start member,
+  # use the first valued member for the reunion.
+  
+  $start_member = $self->{names}->{(keys %$valued)[0]} unless ($start_member);
+
+  # Get all the members that are visting the 
+  # reunion.
+
+  my $visits = to_hash();
+  my $visited = to_hash();
+
+  $self->get_visits($start_member,$visits,$visited,$ids,$valued);
+
+  # Now we have to make a hash to hold who's been queried
+  # and who hasn't. 
+
+  my $queried = to_hash();
+
+  # Wipe that have empty arrays
+
+  $select = '' unless scalar %$select;
+  $quoted_group_by = '' unless scalar @$quoted_group_by;
+  $quoted_order_by = '' unless scalar @$quoted_order_by;
+
+  # Add to the query object for this values set.
+
+  $query->add(-select   => $select,
+              -group_by => $quoted_group_by,
+              -order_by => $quoted_order_by);
+
+  # Run the recursive get query and return it
+
+  $self->get_query($start_member,$query,$ids,$visits,$queried);
+
+  return $query;
+
+}
+
+
+
+### Returns text info about the Relations::Family 
+### object. Useful for debugging and export purposes.
+
+sub to_text {
+
+  # Know thyself
+
+  my ($self) = shift;
+
+  # Get the indenting string and current
+  # indenting amount.
+
+  my ($string,$current) = @_;
+
+  # Calculate the ident amount so we don't 
+  # do it a bazillion times.
+
+  my $indent = ($string x $current);
+
+  # Create a text string to hold everything
+
+  my $text = '';
+
+  # 411
+
+  $text .= $indent . "Relations::Family: $self\n\n";
+  $text .= $indent . "Members:\n";
+
+  foreach my $member (@{$self->{members}}) {
+
+    $text .= $member->to_text($string,$current + 1);
+
+  }
+
+  $text .= $indent . "Values:\n";
+
+  foreach my $value (sort keys %{$self->{values}}) {
+
+    $text .= $self->{values}->{$value}->to_text($string,$current + 1);
+
+  }
+
+  $text .= "\n";
+
+  # Return the text
+
+  return $text;
 
 }
 
@@ -1278,43 +1966,104 @@ Relations::Family - DBI/DBD::mysql Relational Query Engine module.
 
   $dbh = DBI->connect($dsn,$username,$password,{PrintError => 1, RaiseError => 0});
 
-  my $family = new Relations::Family($dbh);
+  $abstract = new Relations::Abstract($dbh);
 
-  $family->add_member(-name     => 'region',
-                      -label    => 'Region',
+  $family = new Relations::Family($abstract);
+
+  $family->add_member(-name     => 'account',
+                      -label    => 'Cust. Account',
                       -database => 'finder',
-                      -table    => 'region',
-                      -id_field => 'reg_id',
-                      -select   => {'id'    => 'reg_id',
-                                   'label' => 'reg_name'},
-                      -from     => 'region',
-                      -order_by => "reg_name");
+                      -table    => 'account',
+                      -id_field => 'acc_id',
+                      -query    => {-select   => {'id'    => 'acc_id',
+                                                  'label' => "concat(cust_name,' - ',balance)"},
+                                    -from     => ['account','customer'],
+                                    -where    => "customer.cust_id=account.cust_id",
+                                    -order_by => "cust_name"});
 
-  $family->add_member(-name     => 'sales_person',
-                      -label    => 'Sales Person',
+  $family->add_member(-name     => 'customer',
+                      -label    => 'Customer',
                       -database => 'finder',
-                      -table    => 'sales_person',
-                      -id_field => 'sp_id',
-                      -select   => {'id'    => 'sp_id',
-                                   'label' => "concat(f_name,' ',l_name)"},
-                      -from     => 'sales_person',
-                      -order_by => ["l_name","f_name"]);
+                      -table    => 'customer',
+                      -id_field => 'cust_id',
+                      -query    => {-select   => {'id'    => 'cust_id',
+                                                  'label' => 'cust_name'},
+                                    -from     => 'customer',
+                                    -order_by => "cust_name"});
 
-  $family->add_lineage(-parent_name  => 'region',
-                       -parent_field => 'reg_id',
-                       -child_name   => 'sales_person',
-                       -child_field  => 'reg_id');
+  $family->add_member(-name     => 'purchase',
+                      -label    => 'Purchase',
+                      -database => 'finder',
+                      -table    => 'purchase',
+                      -id_field => 'pur_id',
+                      -query    => {-select   => {'id'    => 'pur_id',
+                                                  'label' => "concat(
+                                                               cust_name,
+                                                               ' - ',
+                                                               date_format(date, '%M %D, %Y')
+                                                             )"},
+                                    -from     => ['purchase',
+                                                  'customer'],
+                                    -where    => 'customer.cust_id=purchase.cust_id',
+                                    -order_by => ['date desc',
+                                                  'cust_name']});
 
-  $family->set_chosen(-label  => 'Sales Person',
-                      -ids    => '2,5,7');
+  $family->add_lineage(-parent_name  => 'customer',
+                       -parent_field => 'cust_id',
+                       -child_name   => 'purchase',
+                       -child_field  => 'cust_id');
 
-  $available = $family->get_available(-label  => 'Region');
+  $family->add_rivalry(-brother_name  => 'customer',
+                       -brother_field => 'cust_id',
+                       -sister_name   => 'account',
+                       -sister_field  => 'cust_id');
 
-  print "Found $available->{count} Regions:\n";
+  $family->set_chosen(-label  => 'Customer',
+                      -ids    => '2,4');
 
-  foreach $id (@{$available->{ids_arrayref}}) {
+  $available = $family->get_available(-label  => 'Purchase');
 
-    print "Id: $id Label: $available->{labels_hashref}->{$id}\n";
+  print "Found $available->{count} Purchases:\n";
+
+  foreach $id (@{$available->{ids_array}}) {
+
+    print "Id: $id Label: $available->{labels_hash}->{$id}\n";
+
+  }
+
+  $family->add_value(-name         => 'Cust. Account',
+                     -sql          => "concat(cust_name,' - ',balance)",
+                     -member_names => 'customer,account');
+
+  $family->add_value(-name         => 'Paid',
+                     -sql          => "if(balance > 0,'NO','YES')",
+                     -member_names => 'account');
+
+  $family->add_value(-name         => 'Customer',
+                     -sql          => 'cust_name',
+                     -member_names => 'customer');
+
+  $family->add_value(-name         => 'Purchase',
+                     -sql          => "concat(
+                                         cust_name,
+                                         ' - ',
+                                         date_format(date, '%M %D, %Y')
+                                       )",
+                     -member_names => 'purchase,customer');
+
+  $reunion = $family->get_reunion(-data       => 'Paid,Purchase',
+                                  -use_labels => 'Customer',
+                                  -order_by   => 'Customer,Purchase');
+
+  $matrix = $abstract->select_matrix(-query => $reunion);
+
+  print "Found " . scalar @$matrix . " Values:\n";
+
+  foreach $row (@$matrix) {
+
+    print "Customer: $row->{'Customer'}\n";
+    print "Purchase: $row->{'Purchase'}\n";
+    print "Paid: $row->{'Paid'}\n\n";
 
   }
 
@@ -1323,9 +2072,9 @@ Relations::Family - DBI/DBD::mysql Relational Query Engine module.
 =head1 ABSTRACT
 
 This perl module uses perl5 objects to simplify searching through
-large, complex MySQL databases, especially those with foreign keys.
-It uses an object orientated interface, complete with functions to 
-create and manipulate the relational family.
+and reporting on large, complex MySQL databases, especially those 
+with foreign keys. It uses an object orientated interface, complete 
+with functions to create and manipulate the relational family.
 
 The current version of Relations::Family is available at
 
@@ -1339,22 +2088,32 @@ With Relations::Family you can create a 'family' of members for querying
 records. A member could be a table, or it could be a query on a table, like
 all the different months from a table's date field. Once the members are
 created, you can specify how those members are related, who's using who
-as a foreign key lookup, etc.
+as a foreign key lookup, and what values in members you might be interested 
+in reporting on, like whether a customer has paid their bill.
 
 Once the 'family' is complete, you can select records from one member, and
 the query all the matching records from another member. For example, say you 
 a product table being used as a lookup for a order items tables, and you want
 to find all the order items for a certain product. You can select that 
-product's record from the product member, and then get the matching order 
-item records to find all the order items for that product.
+product's record from the product member, and then view the order item 
+records to find all the order items for that product.
+
+You can also build a large query for report purposes using the selections 
+from various members as well as values you might be interested in. For 
+example, say you want to know which customer are paid up and how much 
+business they've generated in the past. You can specify which members'
+selections you want to use to narrow down the report and which values
+you'd like in the report and then use the query returned to see who's
+paid and for how much.
 
 =head2 CALLING RELATIONS::FAMILY ROUTINES
 
-All standard Relations::Family routines use both an ordered and named 
-argument calling style. This is because some routines have as many as 
-twelve arguments, and the code is easier to understand given a named 
-argument style, but since some people, however, prefer the ordered argument 
-style because its smaller, I'm glad to do that too. 
+Most standard Relations::Family routines use both an ordered, named and
+hashed argument calling style. (All except for to_text()) This is because 
+some routines have as many as eight arguments, and the code is easier to 
+understand given a named or hashed argument style, but since some people, 
+however, prefer the ordered argument style because its smaller, I'm glad 
+to do that too. 
 
 If you use the ordered argument calling style, such as
 
@@ -1380,6 +2139,50 @@ Neither case nor order matters in the argument list.  -name, -Name, and
 a dash.  If a dash is present in the first argument, Relations::Family assumes
 dashes for the subsequent ones.
 
+If you use the hashed argument calling style, such as
+
+  $famimly->add_lineage({parent_name  => 'customer',
+                         parent_field => 'cust_id',
+                         child_name   => 'purchase',
+                         child_field  => 'cust_id'});
+
+or
+
+  $famimly->add_lineage({-parent_name  => 'customer',
+                         -parent_field => 'cust_id',
+                         -child_name   => 'purchase',
+                         -child_field  => 'cust_id'});
+
+the order does not matter, but the names, and curly braces do, (minus signs are
+optional). You should consult the function defintions later in this document to 
+determine the names to use.
+
+In the hashed arugment style, no dashes are needed, but they won't cause problems
+if you put them in. Neither case nor order matters in the argument list. 
+parent_name, Parent_Name, PARENT_NAME are all acceptable. If a hash is the first 
+argument, Relations::Family assumes that is the only argument that matters, and 
+ignores any other arguments after the {}'s.
+
+=head2 QUERY ARGUMENTS
+
+Some of the Relations functions recognize an argument named query. This
+argument can either be a string, hash or Relations::Query object. 
+
+The following calls are all equivalent for $object->function($query).
+
+  $object->function("select nothing from void");
+
+  $object->function({select => 'nothing',
+                     from   => 'void'});
+
+  $object->function(Relations::Query->new(-select => 'nothing',
+                                          -from   => 'void'));
+
+
+Since whatever query value is sent to Relations::Query's to_string() 
+function, consult the to_string() function in the Relations::Query 
+documentation for (just a little really) more information.
+
 =head1 LIST OF RELATIONS::FAMILY FUNCTIONS
 
 An example of each function is provided in either 'test.pl' and 'demo.pl'.
@@ -1400,33 +2203,16 @@ object.
                       $database,
                       $table,
                       $id_field,
-                      $select,
-                      $from,
-                      $where,
-                      $group_by,
-                      $having,
-                      $order_by,
-                      $limit);
+                      $query,
+                      $alias);
 
   $family->add_member(-name     => $name,
                       -label    => $label,
                       -database => $database,
                       -table    => $table,
                       -id_field => $id_field,
-                      -select   => $select,
-                      -from     => $from,
-                      -where    => $where,
-                      -group_by => $group_by,
-                      -having   => $having,
-                      -order_by => $order_by,
-                      -limit    => $limit);
-
-  $family->add_member(-name     => $name,
-                      -label    => $label,
-                      -database => $database,
-                      -table    => $table,
-                      -id_field => $id_field,
-                      -query    => $query);
+                      -query    => $query,
+                      -alias    => $alias);
 
 Creates and adds a member to a family. There's three basic groups of 
 arguments in an add_member call. The first group sets how to name 
@@ -1439,29 +2225,32 @@ In the first group, $name and $label set the internal and external
 identity, so both must be unique to the family. Typically, $name 
 is a short string used for quickly specifying a member when coding
 with a family, while $label is a longer string used to display the 
-identity of a member to user using the program.
+identity of a member to user using the program. $label can have 
+spaces within it, $name cannot.
 
-B<$database>, B<$table> and B<$id_field> - 
+B<$database>, B<$table>, B<$alias> and B<$id_field> - 
 In the second group, $database, $table and $id_field set the MySQL
 properties. The $database and $table variables are the database 
 and table used by the member, while $id_field is the member's 
-table's primary key field. Relations::Family using this info when
+table's primary key field. Relations::Family uses this info when
 connecting members to each other during a query.
 
-B<$select> through B<$limit> - 
-These parameters are sent directly to a Relations::Query object,
-and that object is modified to select distinct by default. In order
-for the member to function properly you must declase two variables,
-id and label, in the 'select' part of the query. Ids are the values
-that connect one member to another. Labels are what's displayed to 
-the user to select. See the the documention for Relations::Query for 
-more info on creating a query object.
+Two or more members might use the same table in a database, or 
+they might use the same table name in two different databases. 
+Under either of these circumstances, if just the table name was 
+used when building queries, MySQL would get confused. Enter 
+$alias. This value is used to alias the table of the member. If
+no alias is sent, this value is set to the table name of the
+member.
 
 B<$query> - 
-Instead of specifying the peices of a query, you can create a query
-separately, and send it . In my own experience, I often run into a 
-situation where different members have the same query. The minimize
-code, you can query the query once, then use it many times.
+This is the query used to populate a member's selection list. The
+query must select two fields, 1) the id of the member, labeled 
+'id', and 2) the label of the member, labeled 'label'. The id
+field is what identifies one record from another in a way that is
+understandable to the database. The id field is usually the primary 
+key. The label field is used to distinguish one record from another 
+in a way that is understandable to the user. 
 
 =head2 add_lineage
 
@@ -1480,11 +2269,9 @@ code, you can query the query once, then use it many times.
                        -child_label  => $child_label,
                        -child_field  => $child_field);
 
-Adds a one-to-many relationhsip to a family. This is used when a 
+Adds a one-to-many relationship to a family. This is used when a 
 member, the child, is using another member, the parent, as a 
-lookup. The parent field is the field in the parent member,
-usually the primary key, the values of which is is stored in the 
-child member's child_field.
+lookup. 
 
 B<$parent_name> or B<$parent_label> - 
 Specifies the parent member by name or label. 
@@ -1518,11 +2305,10 @@ of the parent member's field.
                        -sister_label  => $sister_label,
                        -sister_field  => $sister_field);
 
-Adds a one-to-one relationhsip to a family. This is used when a 
-member, there is a one to one relationship between two members. 
-The brother field is the field in the brother member, the values 
-of which is is stored in the sister member's sister_field, or
-vice vice versa.
+Adds a one-to-one relationship to a family. This is used when a 
+member, the sister, is using another member, the parent, as a 
+lookup, and there is no more than one sister record for a given
+brother record. 
 
 B<$brother_name> or B<$brother_label> - 
 Specifies the brother member by name or label. 
@@ -1538,76 +2324,38 @@ B<$sister_field> -
 Specifies the field in the sister member that stores the values 
 of the brother member's field.
 
-=head2 set_chosen
+=head2 add_value
 
-  $family->set_chosen($name,
-                      $ids,
-                      $labels,
-                      $match,
-                      $group,
-                      $filter,
-                      $limit);
+  $family->add_value($name,
+                     $sql,
+                     $member_names);
 
-  $family->set_chosen(-name   => $name,
-                      -ids    => $ids,
-                      -labels => $labels,
-                      -match  => $match,
-                      -group  => $group,
-                      -filter => $filter,
-                      -limit  => $limit);
+  $family->add_value(-name         => $name,
+                     -sql          => $sql,
+                     -member_names => $member_names);
 
-  $family->set_chosen(-label  => $label,
-                      -ids    => $ids,
-                      -labels => $labels,
-                      -match  => $match,
-                      -group  => $group,
-                      -filter => $filter,
-                      -limit  => $limit);
+  $family->add_value(-name          => $name,
+                     -sql           => $sql,
+                     -member_labels => $member_labels);
 
-Sets the member's records selected by a user, as well as 
-some other goodies to control the selection process.
+Adds a value to a family object. Values are used when creating
+a report query from a family object using the get_reunion
+function. Each value object is a column in the report query. 
 
-B<$name> or B<$label> - 
-Specifies the member by name or label. 
+B<$name> - 
+The name of the column in the report query from get_reunion.
 
-B<$ids> -
-The ids selected. Can be a comma delimitted string, or
-an array.
+B<$sql> - 
+The sql code for a value. When the report query is created, all 
+the values appear in the form "select $sql as $name". When 
+referencing a member's table in the $sql of a value, make sure 
+you use the alias from a member, if the alias is any different
+from the table name,
 
-B<$labels> -
-The labels selected. Can be a comma delimitted string, an
-array, or a hash keyed by $ids. It is isn't necessary to 
-send these, unless you want the selected labels returned 
-by get_chosen. 
-
-B<$match> -
-Match any or all. Null or 0 for any, 1 for all. This deals with
-multiple selections from a member and how that affects matching
-records from another member. Match any returns records that are 
-connected to any of the selections. Match all returns records 
-that are connected to all the selection. 
-
-B<$group> -
-Group include or exclude. Null or 0 for include, 1 for exclude. 
-This deals with whether to returning matching records or non 
-matching records. Group include returns records connected to 
-the selections. Group exclude returns records not connected to 
-the selections.
-
-B<$filter> -
-Filter labels. In order to simplify the selection process, you 
-can specify a filter to only show a select group of records 
-from a member for selecting. The filter argument accepts a string,
-$filter, and places it in the clause "having label like 
-'%$filter%'".
-
-B<$limit> -
-Limit returned records. In order to simplify the selection 
-process, you can specify a limit clause to only show a certain 
-number of records from a member for selecting. The limit argument 
-accepts a string, $limit, and places it in the clause "limit 
-$limit", so it can be a single number, or two numbers separated
-by a comma. 
+B<$member_names> or B<$member_labels> - 
+Specifies the members needed, by name or label, by this value
+to build its $sql field. Either can be a comma delimitted 
+string or array reference. 
 
 =head2 get_chosen
 
@@ -1626,39 +2374,157 @@ Specifies the member by name or label.
 B<$chosen> - 
 A hash reference of all returned values.
 
-B<$chosen->{count}> - 
+B<$chosen-E<gt>{count}> - 
 The number of selected records.
 
-B<$chosen->{ids_string}> - 
+B<$chosen-E<gt>{ids_string}> - 
 A comma delimtted string of the ids of the selected records.
 
-B<$chosen->{ids_arrayref}> - 
+B<$chosen-E<gt>{ids_array}> - 
 An array reference of the ids of the selected records.
 
-B<$chosen->{labels_string}> - 
-A comma delimtted string of the labels of the selected records.
-If no labels were sent to get_chosen, this is not available.
+B<$chosen-E<gt>{ids_select}> - 
+An array reference of the ids and labels separated by tabs: "$id\t$label"
+This is used to populate the <OPTION> values of an HTML <SELECT> list so
+that the list selections returned from the CGI module contain both the id 
+and label of each selected record.
 
-B<$chosen->{labels_arrayref}> - 
-An array reference of the labels of the selected records. If no 
-labels were sent to get_chosen, this is not available.
+B<$chosen-E<gt>{labels_string}> - 
+A tab delimtted string of the labels of the selected records.
+If labels were not set with set_chosen, this is not available.
 
-B<$chosen->{labels_hashref}> - 
+B<$chosen-E<gt>{labels_array}> - 
+An array reference of the labels of the selected records. If labels 
+were not set with set_chosen, this is not available.
+
+B<$chosen-E<gt>{labels_hash}> - 
 A hash reference of the labels of the selected records, keyed 
-by the selected ids. If no labels were sent to get_chosen, this 
-is not available.
+by the selected ids. If labels were not set with set_chosen, this is not 
+available.
 
-B<$chosen->{match}> - 
-The match argument sent to get_chosen().
+B<$chosen-E<gt>{labels_select}> - 
+A hash reference of the labels of the selected records, keyed by ids 
+and labels separated by tabs: "$id\t$label". This is used to populate 
+the <OPTION> display of an HTML <SELECT> list while using the CGI
+module. If labels were not set with set_chosen, this is not available.
 
-B<$chosen->{group}> - 
-The group argument sent to get_chosen().
+B<$chosen-E<gt>{match}> - 
+The match argument set with set_chosen().
 
-B<$chosen->{filter}> - 
-The filter argument sent to get_chosen().
+B<$chosen-E<gt>{group}> - 
+The group argument set with set_chosen().
 
-B<$chosen->{limit}> - 
-The limit argument sent to get_chosen().
+B<$chosen-E<gt>{filter}> - 
+The filter argument set with set_chosen().
+
+B<$chosen-E<gt>{limit}> - 
+The limit argument set with set_chosen().
+
+B<$chosen-E<gt>{ignore}> - 
+The ignore argument set with set_chosen().
+
+=head2 set_chosen
+
+  $family->set_chosen($name,
+                      $ids,
+                      $labels,
+                      $match,
+                      $group,
+                      $filter,
+                      $limit,
+                      $ignore);
+
+  $family->set_chosen(-name   => $name,
+                      -ids    => $ids,
+                      -labels => $labels,
+                      -match  => $match,
+                      -group  => $group,
+                      -filter => $filter,
+                      -limit  => $limit,
+                      -ignore => $ignore);
+
+  $family->set_chosen(-label  => $label,
+                      -ids    => $ids,
+                      -labels => $labels,
+                      -match  => $match,
+                      -group  => $group,
+                      -filter => $filter,
+                      -limit  => $limit,
+                      -ignore => $ignore);
+
+  $family->set_chosen(-label   => $label,
+                      -selects => $selects,
+                      -match   => $match,
+                      -group   => $group,
+                      -filter  => $filter,
+                      -limit   => $limit,
+                      -ignore  => $ignore);
+
+Sets the member's records selected by a user, as well as 
+some other goodies to control the selection process.
+
+B<$name> or B<$label> - 
+Specifies the member by name or label. 
+
+B<$ids> -
+The ids selected. Can be a comma delimitted string, an array.
+
+B<$labels> -
+The labels selected. Can be a tab delimitted string, an
+array, or a hash keyed by $ids. It is isn't necessary to 
+send these, unless you want the selected labels returned 
+by get_chosen. 
+
+B<$selects> -
+An array of selected ids and labels. Each array member is a
+string of the id and label value separated by a tab: "$id\t$label".
+This when you used the ids_select and labels_select from 
+get_available() to populate a <SELECT> list using the CGI module.
+
+B<$match> -
+Match any or all. Null or 0 for any, 1 for all. This deals with
+multiple selections from a member and how that affects matching
+records from another member. If a member is set to match any, 
+calling get_available() for another member will return records 
+from the second member that are connected to any of the 
+first member's selections. If a member is set to match all, calling 
+get_available() on another member will return records from the 
+second member that are connected to all of the first member's
+selections.
+
+B<$group> -
+Group include or exclude. Null or 0 for include, 1 for exclude. 
+This deals with whether to return matching records or non 
+matching records. If a member is set to group include, calling 
+get_available() for another member will return records from the 
+second member that are connected to the first member's selections. 
+If a member is set to group exclude, calling get_available() on 
+another member will return records from the second member that 
+are not connected to the first member's selections.
+
+B<$filter> -
+Filter labels. In order to simplify the selection process, you 
+can specify a filter to only show a select group of records 
+from a member for selecting. The filter argument accepts a string,
+$filter, and places it in the clause "having label like 
+'%$filter%'".
+
+B<$limit> -
+Limit returned records. In order to simplify the selection 
+process, you can specify a limit clause to only show a certain 
+number of records from a member for selecting. The limit argument 
+accepts a string, $limit, and places it in the clause "limit 
+$limit", so it can be a single number, or two numbers separated
+by a comma. 
+
+B<$ignore> -
+Ignore or not. Null or 0 for don't ignore, 1 for ignore. If a 
+member is set to don't ignore, calling get_available() for another 
+member will return records from the second member that are related
+in some way (depending on match and group) to the first member's 
+selections.  If a member is set to ignore, calling get_available() 
+on another member will return records from the second member while 
+completely ignoring the first member's selections.
 
 =head2 get_available
 
@@ -1668,8 +2534,9 @@ The limit argument sent to get_chosen().
 
   $available = $family->get_available(-label => $label);
 
-Returns a member's available records, records connected to the 
-currently selected records in other members.
+Returns a member's available records, records related in some way 
+to the currently selected records in other members, which are not
+being ignored.
 
 B<$name> or B<$label> - 
 Specifies the member by name or label. 
@@ -1677,24 +2544,126 @@ Specifies the member by name or label.
 B<$available> - 
 A hash reference of all returned values.
 
-B<$available->{count}> - 
+B<$available-E<gt>{count}> - 
 The number of available records.
 
-B<$available->{ids_string}> - 
-A comma delimtted string of the ids of the available records.
-
-B<$available->{ids_arrayref}> - 
+B<$available-E<gt>{ids_array}> - 
 An array reference of the ids of the available records.
 
-B<$available->{labels_string}> - 
-A comma delimtted string of the labels of the available records.
+B<$available-E<gt>{ids_select}> - 
+An array reference of ids and labels. Each array member is a 
+record's id and label separated by a tab: "$id\t$label". This is
+used to populate a <SELECT> list using the CGI module so that 
+you can see both the ids and labels selected by a user.
 
-B<$available->{labels_arrayref}> - 
+B<$available-E<gt>{labels_array}> - 
 An array reference of the labels of the available records. 
 
-B<$available->{labels_hashref}> - 
+B<$available-E<gt>{labels_hash}> - 
 A hash reference of the labels of the available records, keyed 
 by the available ids.
+
+B<$available-E<gt>{labels_select}> - 
+A hash reference of the labels of the available records, keyed 
+by a record's id and label separated by a tab: "$id\t$label". This 
+is used to populate a <SELECT> list using the CGI module so that 
+you can see both the ids and labels selected by a user.
+
+=head2 choose_available
+
+  $chosen = $family->choose_available($name);
+
+  $chosen = $family->choose_available(-name => $name);
+
+  $chosen = $family->choose_available(-label => $label);
+
+Narrows down a member's chosen records using the available 
+records to that member. So if five records are selected in a 
+member, but only three of those records are now available
+(as if called with get_available()), this function will cause
+the member to only have those three records chosen.
+
+B<$name> or B<$label> - 
+Specifies the member by name or label. 
+
+B<$chosen> - 
+A hash reference of all returned values. See the get_chosen()
+function for all values within the hash.
+
+=head2 get_reunion
+
+  $reunion = $family->get_reunion($data,
+                                  $use_names,
+                                  $group_by,
+                                  $order_by);
+
+  $reunion = $family->get_reunion(-data        => $data,
+                                  -use_names   => $use_names,
+                                  -group_by    => $group_by,
+                                  -order_by    => $order_by);
+
+  $reunion = $family->get_reunion(-data        => $data,
+                                  -use_labels  => $use_labels,
+                                  -group_by    => $group_by,
+                                  -order_by    => $order_by);
+
+Returns a report query of the values specified by $data, 
+grouped and ordered by the values specified by $group_by and 
+$order_by, using the chosen ids of members specified by
+$use_names or $use_labels.
+
+B<$data> - 
+Specifies the values by name to be selected in the reunion. 
+
+B<$use_names> or B<$use_labels> - 
+Specifies by name or label which members' chosen ids to use 
+in narrowing down the report query. Either can be a comma 
+delimitted string or array reference. 
+
+B<$group_by> and B<$order_by> - 
+Specifies the values by name to use in the group by and order 
+by clause of the report query. Either can be a comma 
+delimitted string or array reference. 
+
+B<$reunion> - 
+The report query in the form of a Relations::Query object. 
+
+=head2 to_text
+
+  $text = $family->to_text($string,$current);
+
+Returns a text representation of a family. Useful for debugging purposes. 
+
+B<$string> - 
+String to use for indenting.  
+
+B<$current> - 
+Current number of indents.
+
+B<$text> - 
+Textual representation of the family object.
+
+=head1 LIST OF RELATIONS::FAMILY PROPERTIES
+
+=head2 abstract
+
+The Relations::Abstract object a family uses to query and such.
+
+=head2 members
+
+An array reference of the members in a family.
+
+=head2 names
+
+A hash reference of the members in a family, keyed by members' names.
+
+=head2 labels
+
+A hash reference of the members in a family, keyed by members' labels.
+
+=head2 values
+
+A hash reference of the values in a family, keyed by values' names.
 
 =head1 RELATIONS::FAMILY DEMO - FINDER
 
@@ -1714,16 +2683,47 @@ while in the Relations-Family installation directory.
 =head2 Overview
 
 This demo revolves around the finder database. This database is for a made up 
-company that sells three different types of products: Toiletry: Soap, Towels,
-etc., Dining: PLates Cups, etc. and Office: Phones, Faxes, etc. There's a 
-type table for the different types of products, and a product table for the
-different products. There's also a one-to-many relationship between type to 
-product, because each product is of a specific type.
+company that sells three different types of products - Toiletry: Soap, Towels,
+etc., Dining: Plates Cups, etc. and Office: Phones, Faxes, etc. The demo is an
+app that allows you to search through that database
+
+=head2 Structure
+
+                    |---------|
+                    |  item   |        |------------|
+                    |---------|        |  product   |        |-----------|
+                    | item_id |        |------------|        |   type    |
+                /-M-|  pur_id |    /-1-|  prod_id   |        |-----------|
+                |   | prod_id |-M-/    |  prod_name |    /-1-|  type_id  |
+                |   |   qty   |        |  type_id   |-M-/    | type_name |
+                |   |---------|        |------------|        |-----------|
+                |
+                |   |---------|         |--------------|
+                |   | pur_sp  |         | sales_person |
+                |   |---------|         |--------------|        
+                |   |  ps_id  |     /-1-|    sp_id     |      |----------|  
+                |-M-| pur_id  |    /    |    f_name    |      |  region  |
+|-----------|   |   |  sp_id  |-M-/     |    l_name    |      |----------|
+| purchase  |   |   |---------|         |    reg_id    |-M--1-|  reg_id  |
+|-----------|   |                       |--------------|      | reg_name |
+|  pur_id   |-1-/                                             |----------|
+| cust_id   |-M-\      |--------------|          
+|   date    |    \     |   customer   |          |--------------|
+|-----------|     \    |--------------|          |   account    |
+                   \-1-|   cust_id    |-1--\     |--------------|
+                       |  cust_name   |     \    |    acc_id    |
+                       |    phone     |      \-1-|   cust_id    |
+                       |--------------|          |   balance    |
+                                                 |--------------|      
+
+There's a type table for the different types of products, and a product table 
+for the different products. There's also a one-to-many relationship between type 
+to product, because each product is of a specific type.
 
 A similar relationship exists between the sales_person table, which holds all 
 the different sales people, and the region table, which holds the regions for
-the sales peoples. Each sales person belong to a particular region, so there's
-a one-to-many relationship fromt he region table to the sales_person table.
+the sales peoples. Each sales person belongs to a particular region, so there's
+a one-to-many relationship from the region table to the sales_person table.
 
 If there's sellers, there's buyers. This is the function of the customer 
 table. There is also an account table, for the accounts for each customer.
@@ -1735,7 +2735,7 @@ which holds all the purchases. Since only one customer makes a certain
 purchase, but one customer could make many purchases, there is a one-to-many 
 relationship from the customer table to the purchase table.
 
-Each purchase contain some number of products at various quantities. This is 
+Each purchase contains some number of products at various quantities. This is 
 the role of the item table. One purchase can have multiple items, so there is
 a one-to-many relationship from the purchase table to the item table. 
 
@@ -1746,13 +2746,15 @@ product table to the item table.
 Finally, zero or more sales people can get credit for a purchase, so there 
 is many-to-many relationship between the sales_person and purchase tables.
 This relationship is handled by the pur_sp table, so there is a one-to-many
-relatiionship from the purchase table to the pur_sp table and a one-to-many 
+relationship from the purchase table to the pur_sp table and a one-to-many 
 relationship from the sales_person table to the pur_sp table.
 
+=head2 Role of Family
+
 Family's role in this is true to it's name sake: It brings all of this into
-one place, and allows table to connect to one another. A member in the finder 
+one place, and allows tables to connect to one another. A member in the finder 
 family is created for each table in the finder database, and a lineage (for
-one-to-many's) or a rivalry (for one-to-one's) for relationship.
+one-to-many's) or a rivalry (for one-to-one's) for each relationship.
 
 With Family, you can select records from one member and find all the 
 connecting records in other members. For example, to see all the products
@@ -1783,8 +2785,8 @@ It's fed into a MySQL limit clause so it can be one number, or two separated
 by a comma. To just see X number of rows from the begining, just enter X. To
 see X number of rows starting at Y, enter Y,X. 
 
-Filter is for filtering avaialable records for display. It takes a string, and
-only returns member's avaiable records that have the entered string in their
+Filter is for filtering available records for display. It takes a string, and
+only returns member's available records that have the entered string in their
 label. Just enter the text to filter by.
 
 You'll then get a numbered listing of all the available records for that member, 
@@ -1793,7 +2795,7 @@ as well as the match, group, ignore, limit and filter settings for that member.
 Next, you'll get some questions regarding which records are to be selectecd,
 and how those selections are to be used (or not used!). I'll go into them here.
 
-Selections are the records you want to choose. To choose records type each 
+Selections are the records you want to choose. To choose records, type each 
 number in, separating with commas. 
 
 Match is whether you want other lists to match any of your multiple selections 
@@ -1804,12 +2806,28 @@ exclude was selected, in matching other member's records. 0 for include,
 1 for exclude.
 
 Finally, you'll be asked if you want to do this again. 'Y' for yes, 'N' for
-no. It defaults to 'Y', so just press return for yes. If you choose yes, 
+no. It defaults to 'Y', so just type return for yes. If you choose yes, 
 you'll get a list of members, go through the selection/viewing process again.
+
+If you press 'N', demo.pl will ask if you want to create a reunion. A reunion
+is like a final report query. It defaults to 'N', so just type return for no. 
+If you choose no, the program will exit. 
+
+If you choose yes, you'll get a list of all the values in finder. At the Data
+prompt, type in all values (by number) you'd like to see in the report query,
+separating each with a comma. At the Group By prompt, type in all values (by 
+number) you'd like to group by in the report query, separating each with a 
+comma. At the Order By prompt, well, I bet you can figure it out. 
+
+After filling out the value information, a list of all members will be 
+displayed. You'll be asked which members chosen values should be used in the 
+query. Enter the numbers of the members to use for this.
+
+After that's all set, you'll get the customized results of your report query. 
 
 =head2 Examples
 
-All together, this database can be used to figure out a bunch of stuff. Here's
+All together, this system can be used to figure out a bunch of stuff. Here's
 some ways to query certain records. With each example, it's best to restart 
 demo.pl for scratch (exit and rerun).
 
@@ -1900,11 +2918,12 @@ the first or last name.
 These are all the people with the letter 'y' in their first or last name.
 - No Selections (or just hit return)
 - Match = 0, Group = 0 (or just hit return)
-- Reply N, to 'Again?' (to quit)
+- Reply N, to 'Again?' (to go to reunion)
+- Reply N, to 'Create Reunion?' (to quit)
 
 B<The Selections Effect> - A purchase contains one or more products, and you can
 see which product were purchased on a purchased order by selected a record
-from the purcahse member, and viewing the avaiable records of the product 
+from the purchase member, and viewing the avaiable records of the product 
 member. Varney solutions made a purchase on jan 4th, 2001, and we'd like to 
 see what they bought.
 
@@ -1963,7 +2982,8 @@ Now, we'll check out all the products on that purchase.
 These are the products purchased by Varney in January.
 - No Selections (or just hit return)
 - Match = 0, Group = 0 (or just hit return)
-- Reply N, to 'Again?' (to quit)
+- Reply N, to 'Again?' (to go to reunion)
+- Reply N, to 'Create Reunion?' (to quit)
 
 B<Matching Multiple> - You can also lookup purchases by products. 
 Furthermore you can look purcahses up by selecting many products, 
@@ -2013,7 +3033,7 @@ These are all the products.
 - Match = 0, Group = 0 (or just hit return)
 - Reply Y, to 'Again?' (to select another member)
 
-Now, we'll see which purchase contain either Soap or Soap Dispenser.
+Now, we'll see which purchases contain either Soap or Soap Dispenser.
 - From the members list, select 5 for Purchase.
 - Don't choose available, no limit, and no filter. (or just hit return)
 - There should be 3 available records:
@@ -2048,7 +3068,7 @@ all so we can purchases that have all (Soap and Soap Dispenser).
 
 These are all the products, with Soap and Soap Dispenser already selected.
 - From the available records, select 4,3 for Soap, and Soap Dispenser
-- Match = 1 (means 'any')
+- Match = 1 (means 'all')
 - Group = 0 (or just hit return)
 - Reply Y, to 'Again?' (to select another member)
 
@@ -2062,7 +3082,8 @@ Now, we'll see which purchase contain both Soap and Soap Dispenser.
 This is the only purchase that contains both Soap and Soap Dispenser. 
 - No Selections (or just hit return)
 - Match = 0, Group = 0 (or just hit return)
-- Reply N, to 'Again?' (to quit)
+- Reply N, to 'Again?' (to go to reunion)
+- Reply N, to 'Create Reunion?' (to quit)
 
 B<Group Inclusion/Exclusion> - Sometimes you'd like to find all records
 the records not connected to your selections from a particular member.
@@ -2117,67 +3138,163 @@ Now, we'll check out all the purchases not from Harry's Garage.
 
 - No Selections (or just hit return)
 - Match = 0, Group = 0 (or just hit return)
-- Reply N, to 'Again?' (to quit)
+- Reply N, to 'Again?' (to go to reunion)
+- Reply N, to 'Create Reunion?' (to quit)
+
+B<Basic Reunion> - Let's first check out which customers 
+owe us money, except for Varney Solutions of course, since
+we owe them a favor. 
+
+First, let's see all the customers.
+- From the members list, select 1 for Customer.
+- Don't choose available, no limit, and no filter. (or just hit return)
+- There should be 8 available records:
+
+   (1)  Harry's Garage
+   (4)  Last Night Diner
+   (3)  Simply Flowers
+   (5)  Teskaday Print Shop
+   (2)  Varney Solutions
+
+- From the available records, select 2 for Varney Solutions
+- Match = 0 (or just hit return)
+- Group = 1 (means 'exclude')
+- Reply N, to 'Again?' (to go to reunion)
+- Reply Y, to 'Create Reunion?' (to create a report)
+
+Next, we have to decide which values we want in out report. After 
+selecting create reunion, you should get a list of all values. 
+- Data = select 0,1,2 for Customer, their Account and whether or 
+not they've paid, Paid.
+- Group By = (just hit return)
+- Order By = 1, to order by customer.
+
+Finally, we have to decide which members we're going to use to 
+narrow down the query. A list will be displayed of all members
+in finder.
+- From the members list, select 1 for Customer.
+- You should get 4 results, each with 3 fields:
+
+  Customer: Harry's Garage
+  Cust. Account: Harry's Garage - 134.87
+  Paid: NO
+
+  Customer: Last Night Diner
+  Cust. Account: Last Night Diner - 54.65
+  Paid: NO
+
+  Customer: Simply Flowers
+  Cust. Account: Simply Flowers - 0.00
+  Paid: YES
+
+  Customer: Teskaday Print Shop
+  Cust. Account: Teskaday Print Shop - 357.72
+  Paid: NO
+
+B<Advanced Reunion> - Let's see how many each each Office
+product we sold and sort from least to most of numbers
+sold.
+
+First, let's see all the product types.
+- From the members list, select 8 for Type.
+- Don't choose available, no limit, and no filter. (or just hit return)
+- There should be 8 available records:
+
+   (3)  Dining
+   (2)  Office
+   (1)  Toiletry
+
+- From the available records, select 2 for Office
+- Match = 0 (or just hit return)
+- Group = 0 (or just hit return)
+- Reply N, to 'Again?' (to go to reunion)
+- Reply Y, to 'Create Reunion?' (to create a report)
+
+Next, we have to decide which values we want in out report.  
+- Data = select 3,9 for Product and Sold
+- Group By = select 3 for Product
+- Order By = select 9 for Sold
+
+Finally, we have to decide which members we're going to use to 
+narrow down the query. A list will be displayed of all members
+in finder.
+- From the members list, type 8 for Type.
+- You should get 4 results, each with 2 fields:
+
+  Sold: 2
+  Product: Answer Machine
+
+  Sold: 2
+  Product: Fax
+
+  Sold: 7
+  Product: Phone
+
+  Sold: 15
+  Product: Copy Machine
 
 =head1 OTHER RELATED WORK
 
-=head2 Relations
+=head2 Relations (Perl)
 
-This perl library contains functions for dealing with databases.
-It's mainly used as the the foundation for all the other 
-Relations modules. It may be useful for people that deal with
-databases in Perl as well.
+Contains functions for dealing with databases. It's mainly used as 
+the foundation for the other Relations modules. It may be useful for 
+people that deal with databases as well.
 
-=head2 Relations::Abstract
+=head2 Relations-Query (Perl)
 
-A DBI/DBD::mysql Perl module. Meant to save development time and code 
-space. It takes the most common (in my experience) collection of DBI 
-calls to a MySQL databate, and changes them to one liner calls to an
-object.
-
-=head2 Relations::Query
-
-An Perl object oriented form of a SQL select query. Takes hash refs,
-array refs, or strings for different clauses (select,where,limit)
+An object oriented form of a SQL select query. Takes hashes.
+arrays, or strings for different clauses (select,where,limit)
 and creates a string for each clause. Also allows users to add to
 existing clauses. Returns a string which can then be sent to a 
-MySQL DBI handle. 
+database. 
 
-=head2 Relations.Admin.inc.php
+=head2 Relations-Abstract (Perl)
 
-Some generalized PHP classes for creating Web interfaces to relational 
-databases. Allows users to add, view, update, and delete records from 
+Meant to save development time and code space. It takes the most common 
+(in my experience) collection of calls to a MySQL database, and changes 
+them to one liner calls to an object.
+
+=head2 Relations-Admin (PHP)
+
+Some generalized objects for creating Web interfaces to relational 
+databases. Allows users to insert, select, update, and delete records from 
 different tables. It has functionality to use tables as lookup values 
 for records in other tables.
 
-=head2 Relations::Family
+=head2 Relations-Family (Perl)
 
-A Perl query engine for relational databases.  It queries members from 
+Query engine for relational databases.  It queries members from 
 any table in a relational database using members selected from any 
 other tables in the relational database. This is especially useful with 
-complex databases; databases with many tables and many connections 
+complex databases: databases with many tables and many connections 
 between tables.
 
-=head2 Relations::Display
+=head2 Relations-Display (Perl)
 
-An Perl module creating GD::Graph objects from database queries. It 
-takes in a query through a Relations::Query object, along with 
-information pertaining to which field values from the query results are 
-to be used in creating the graph title, x axis label and titles, legend 
-label (not used on the graph) and titles, and y axis data. Returns a 
-GD::Graph object built from from the query.
+Module creating graphs from database queries. It takes in a query through a 
+Relations-Query object, along with information pertaining to which field 
+values from the query results are to be used in creating the graph title, 
+x axis label and titles, legend label (not used on the graph) and titles, 
+and y axis data. Returns a graph and/or table built from from the query.
 
-=head2 Relations::Choice
+=head2 Relations-Report (Perl)
 
-An Perl CGI interface for Relations::Family, Reations::Query, and 
-Relations::Display. It creates complex (too complex?) web pages for 
-selecting from the different tables in a Relations::Family object. 
-It also has controls for specifying the grouping and ordering of data
-with a Relations::Query object, which is also based on selections in 
-the Relations::Family object. That Relations::Query can then be passed
-to a Relations::Display object, and a graph or table will be displayed.
-A working model already exists in a production enviroment. I'd like to 
-streamline it, and add some more functionality before releasing it to 
-the world. Shooting for early mid Summer 2001.
+A Web interface for Relations-Family, Reations-Query, and Relations-Display. 
+It creates complex (too complex?) web pages for selecting from the different 
+tables in a Relations-Family object. It also has controls for specifying the 
+grouping and ordering of data with a Relations-Query object, which is also 
+based on selections in the Relations-Family object. That Relations-Query can 
+then be passed to a Relations-Display object, and a graph and/or table will 
+be displayed.
+
+=head2 Relations-Structure (XML)
+
+An XML standard for Relations configuration data. With future goals being 
+implmentations of Relations in different languages (current targets are 
+Perl, PHP and Java), there should be some way of sharing configuration data
+so that one can switch application languages seamlessly. That's the goal
+of Relations-Structure A standard so that Relations objects can 
+export/import their configuration through XML. 
 
 =cut

@@ -4,6 +4,7 @@ package Relations::Family::Rivalry;
 require Exporter;
 require DBI;
 require 5.004;
+require Relations;
 
 use Relations;
 
@@ -17,7 +18,7 @@ use Relations;
 # This program is free software, you can redistribute it and/or modify it under
 # the same terms as Perl istelf
 
-$Relations::Family::Rivalry::VERSION = '0.91';
+$Relations::Family::Rivalry::VERSION = '0.92';
 
 @ISA = qw(Exporter);
 
@@ -31,10 +32,12 @@ $Relations::Family::Rivalry::VERSION = '0.91';
 
 use strict;
 
-# Create a Relations::Family::Rivalry object.This object 
-# holds a one-to-one relationship between two tables.
-# This is when the first one table (brother) is connected 
-# to a second one table (sister) via a primary key.
+
+
+### Create a Relations::Family::Rivalry object.This object 
+### holds a one-to-one relationship between two tables.
+### This is when the first one table (brother) is connected 
+### to a second one table (sister) via two fields.
 
 sub new {
 
@@ -53,9 +56,9 @@ sub new {
                                    'BROTHER_FIELD'],@_);
 
   # $brother_member - Brother family member (one)
-  # $brother_field  - Brother primary key
+  # $brother_field  - Brother field used as a foreign key
   # $sister_member  - Sister family member (one)
-  # $sister_field   - Sister primary key
+  # $sister_field   - Sister field field using the foreign key
 
   # Create the hash to hold all the vars
   # for this object.
@@ -74,7 +77,55 @@ sub new {
   $self->{brother_member} = $brother_member;
   $self->{brother_field} = $brother_field;
 
+  # Give thyself 
+
   return $self;
+
+}
+
+
+
+### Returns text info about the Relations::Family::Rivalry 
+### object. Useful for debugging and export purposes.
+
+sub to_text {
+
+  # Know thyself
+
+  my ($self) = shift;
+
+  # Get the indenting string and current
+  # indenting amount.
+
+  my ($string,$current) = @_;
+
+  # Calculate the ident amount so we don't 
+  # do it a bazillion times.
+
+  my $indent = ($string x $current);
+
+  # Create a text string to hold everything
+
+  my $text = '';
+
+  # 411
+
+  $text .= $indent . "Relations::Family::Rivalry: $self\n";
+  $text .= $indent . "Brother Label: $self->{brother_member}->{label} ";
+  $text .= $indent . "Name: $self->{brother_member}->{name} ";
+  $text .= $indent . "Member: $self->{brother_member}\n";
+  $text .= $indent . "Brother Field: $self->{brother_field}\n";
+
+  $text .= $indent . "Sister Label:  $self->{sister_member}->{label} ";
+  $text .= $indent . "Name: $self->{sister_member}->{name} ";
+  $text .= $indent . "Member: $self->{sister_member}\n";
+  $text .= $indent . "Sister Field: $self->{sister_field}\n";
+
+  $text .= "\n";
+
+  # Return the text
+
+  return $text;
 
 }
 
