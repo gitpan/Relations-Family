@@ -77,9 +77,11 @@
 	<LI><A HREF="#change log">CHANGE LOG</A></LI>
 	<UL>
 
+		<LI><A HREF="#relationsfamily0.94">Relations-Family-0.94</A></LI>
 		<LI><A HREF="#relationsfamily0.93">Relations-Family-0.93</A></LI>
 	</UL>
 
+	<LI><A HREF="#todo list">TODO LIST</A></LI>
 	<LI><A HREF="#other related work">OTHER RELATED WORK</A></LI>
 	<UL>
 
@@ -269,10 +271,10 @@ to do that too.</P>
 later in this document to determine the order to use.</P>
 <P>If you use the named argument calling style, such as</P>
 <PRE>
-  $famimly-&gt;add_lineage(-parent_name  =&gt; 'customer',
-                        -parent_field =&gt; 'cust_id',
-                        -child_name   =&gt; 'purchase',
-                        -child_field  =&gt; 'cust_id');</PRE>
+  $family-&gt;add_lineage(-parent_name  =&gt; 'customer',
+                       -parent_field =&gt; 'cust_id',
+                       -child_name   =&gt; 'purchase',
+                       -child_field  =&gt; 'cust_id');</PRE>
 <P>the order does not matter, but the names, and minus signs preceeding them, do.
 You should consult the function defintions later in this document to determine 
 the names to use.</P>
@@ -283,16 +285,16 @@ a dash.  If a dash is present in the first argument, Relations::Family assumes
 dashes for the subsequent ones.</P>
 <P>If you use the hashed argument calling style, such as</P>
 <PRE>
-  $famimly-&gt;add_lineage({parent_name  =&gt; 'customer',
-                         parent_field =&gt; 'cust_id',
-                         child_name   =&gt; 'purchase',
-                         child_field  =&gt; 'cust_id'});</PRE>
+  $family-&gt;add_lineage({parent_name  =&gt; 'customer',
+                        parent_field =&gt; 'cust_id',
+                        child_name   =&gt; 'purchase',
+                        child_field  =&gt; 'cust_id'});</PRE>
 <P>or</P>
 <PRE>
-  $famimly-&gt;add_lineage({-parent_name  =&gt; 'customer',
-                         -parent_field =&gt; 'cust_id',
-                         -child_name   =&gt; 'purchase',
-                         -child_field  =&gt; 'cust_id'});</PRE>
+  $family-&gt;add_lineage({-parent_name  =&gt; 'customer',
+                        -parent_field =&gt; 'cust_id',
+                        -child_name   =&gt; 'purchase',
+                        -child_field  =&gt; 'cust_id'});</PRE>
 <P>the order does not matter, but the names, and curly braces do, (minus signs are
 optional). You should consult the function defintions later in this document to 
 determine the names to use.</P>
@@ -680,16 +682,31 @@ function for all values within the hash.</P>
                                   -use_labels  =&gt; $use_labels,
                                   -group_by    =&gt; $group_by,
                                   -order_by    =&gt; $order_by);</PRE>
+<PRE>
+  $reunion = $family-&gt;get_reunion(-data         =&gt; $data,
+                                  -use_name_ids =&gt; $use_name_ids,
+                                  -group_by     =&gt; $group_by,
+                                  -order_by     =&gt; $order_by);</PRE>
+<PRE>
+  $reunion = $family-&gt;get_reunion(-data           =&gt; $data,
+                                  -use_label_ids  =&gt; $use_label_ids,
+                                  -group_by       =&gt; $group_by,
+                                  -order_by       =&gt; $order_by);</PRE>
 <P>Returns a report query of the values specified by $data, 
 grouped and ordered by the values specified by $group_by and 
 $order_by, using the chosen ids of members specified by
-$use_names or $use_labels.</P>
+$use_names or $use_labels, or the ids specified by 
+$use_name_ids or $use_label_ids.</P>
 <P><STRONG>$data</STRONG> - 
 Specifies the values by name to be selected in the reunion.</P>
 <P><STRONG>$use_names</STRONG> or <STRONG>$use_labels</STRONG> - 
 Specifies by name or label which members' chosen ids to use 
 in narrowing down the report query. Either can be a comma 
 delimitted string or array reference.</P>
+<P><STRONG>$use_name_ids</STRONG> or <STRONG>$use_label_ids</STRONG> - 
+Specifies by name or label which ids to use in narrowing down the 
+report query. Must be a hash ref of strings of comma delimitted id 
+values, keyed by name or label.</P>
 <P><STRONG>$group_by</STRONG> and <STRONG>$order_by</STRONG> - 
 Specifies the values by name to use in the group by and order 
 by clause of the report query. Either can be a comma 
@@ -1224,6 +1241,12 @@ in finder.
 <HR>
 <H1><A NAME="change log">CHANGE LOG</A></H1>
 <P>
+<H2><A NAME="relationsfamily0.94">Relations-Family-0.94</A></H2>
+<P><STRONG>Setting Get Reunion IDs</STRONG></P>
+<P>Added functionality to get_reunion to accept an alternative set of 
+member' ids to use in the reunion query. This was done for the 
+Relations::Report module's Iteration module.</P>
+<P>
 <H2><A NAME="relationsfamily0.93">Relations-Family-0.93</A></H2>
 <P><STRONG>Add Member Query Cloning</STRONG></P>
 <P>If a Relations::Query object is sent to the <CODE>add_member()</CODE> function 
@@ -1236,6 +1259,26 @@ This isn't true (even before the above changes). The functions
 require a hash of query pieces (keyed with select, from, etc.) or a
 Relations::Query object. This is because Relations::Family builds on 
 the query and needs the pieces separated to do this.</P>
+<P>
+<HR>
+<H1><A NAME="todo list">TODO LIST</A></H1>
+<P><STRONG>Local Listing</STRONG></P>
+<P>Add functionality to the Member module so that a member can function
+as lookup values for a certain field. This would allow enum fields to 
+be tied to a member, and allow user to select enum field values to 
+narrow down a query.</P>
+<P><STRONG>Names and Labels of Values</STRONG></P>
+<P>Add a name and label property to the Value modules. This is so Family
+will be more XML compatible since the Value module's current name 
+property can contain spaces and would be ill suited for an ID value 
+since it can contain spaces. Value will then be like Member will a 
+lowercase no spaces name for internals and a anything goes label for
+display purposes.</P>
+<P><STRONG>XML Functionality</STRONG></P>
+<P>Add functionality so that a Family module (and all its kids) can 
+import and export their configuration to XML. This will be useful when 
+the PHP and Java versions of Relations::Family come about. People
+will be able to port from one language to another with little effort.</P>
 <P>
 <HR>
 <H1><A NAME="other related work">OTHER RELATED WORK</A></H1>

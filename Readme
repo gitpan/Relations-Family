@@ -1,6 +1,6 @@
 NAME
 
-  Relations::Family v0.93
+  Relations::Family v0.94
 
 DESCRIPTION
 
@@ -27,13 +27,13 @@ INSTALlATION
     Relations::Query >= 0.93
     Relations::Abstract >= 0.94
 
-  WIN32 (Relations-Family-0.93.zip)
+  WIN32 (Relations-Family-0.94.zip)
 
     Extract zip file into a directory and type
 
     ppm install Relations-Family.ppd
 
-  UN*X (Relations-Family-0.93.tar.gz)
+  UN*X (Relations-Family-0.94.tar.gz)
 
     Extract bundle into a directory and type
 

@@ -26,7 +26,7 @@ use Relations::Family::Value;
 # This program is free software, you can redistribute it and/or modify it under
 # the same terms as Perl istelf
 
-$Relations::Family::VERSION = '0.93';
+$Relations::Family::VERSION = '0.94';
 
 @ISA = qw(Exporter);
 
@@ -1628,6 +1628,8 @@ sub get_reunion {
       $query,
       $use_labels,
       $use_members,
+      $use_name_ids,
+      $use_label_ids,
       $start_label,
       $start_member) = rearrange(['DATA',
                                   'USE_NAMES',
@@ -1637,6 +1639,8 @@ sub get_reunion {
                                   'QUERY',
                                   'USE_LABELS',
                                   'USE_MEMBERS',
+                                  'USE_NAME_IDS',
+                                  'USE_LABEL_IDS',
                                   'START_LABEL',
                                   'START_MEMBER'],@_);
                              
@@ -1648,89 +1652,128 @@ sub get_reunion {
   # $query - Query to start out with
   # $use_labels -  Use IDs from these members (by label)
   # $use_members -  Use IDs from these members
+  # $use_name_ids -  Use these IDs from members keyed by name
+  # $use_label_ids -  Use these IDs from members keyed by label
   # $start_label - Label of member to start from
   # $start_member - Member to start from
-
-  # Look up use names from use labels unless use names 
-  # or use members is set, or they didn't send use labels
-
-  unless ($use_names || $use_members || !$use_labels) {
-
-    # Convert use labels to an array, and 
-    # set use names to an empty array.
-
-    $use_labels = to_array($use_labels);
-    $use_names = to_array();
-
-    # Go through each use label
-
-    foreach my $use_label (@$use_labels) {
-
-      # If this use label isn't found, something went
-      # wrong. Let the user know what's up.
-
-      return $self->{abstract}->report_error("get_reunion failed: use member label '$use_label' not found\n")
-        unless $self->{labels}->{$use_label}->{name};
-
-      # Add this member's name to use_names
-
-      push @$use_names, $self->{labels}->{$use_label}->{name};
-
-    }
-
-  }
- 
-  # Look up use members from use names unless use 
-  # members is set, or they didn't send use names
-
-  unless ($use_members || !$use_names) {
-
-    # Convert use names to an array, and 
-    # set use members to an empty array.
-
-    $use_names = to_array($use_names);
-    $use_members = to_array();
-
-    # Go through each use name
-
-    foreach my $use_name (@$use_names) {
-
-      # If this use name isn't found, something went
-      # wrong. Let the user know what's up.
-
-      return $self->{abstract}->report_error("get_reunion failed: use member name '$use_name' not found\n")
-        unless $self->{names}->{$use_name};
-
-      # Add this member to use_members
-
-      push @$use_members, $self->{names}->{$use_name};
-
-    }
-
-  }
 
   # Create an empty hash of ids to hold the ids
   # to use in the reunion. 
 
   my $ids = to_hash();
 
-  # Look up ids from use members if they sent use 
-  # members, and key them by name.
+  # Unless the use_ids variables were sent
 
-  if ($use_members) {
+  unless ($use_name_ids || $use_label_ids) {
 
-    foreach my $use_member (@$use_members) {
+    # Look up use labels from use members unless use labels 
+    # or use names is set, or they didn't send use members
 
-      # If this member has stuff set and its not
-      # to be ignored, use its selected ids.
+    unless ($use_labels || $use_names || !$use_members) {
 
-      $ids->{$use_member->{name}} = $use_member->{chosen_ids_string} 
-        if (($use_member->{chosen_count} > 0) && !$use_member->{ignore});
+      # Set use labels to an empty array.
+
+      $use_labels = to_array();
+
+      # Go through each use member
+
+      foreach my $use_member (@$use_members) {
+
+        # If this use member isn't set, something went
+        # wrong. Let the user know what's up.
+
+        return $self->{abstract}->report_error("get_reunion failed: use member '$use_member' not set\n")
+          unless $use_member;
+
+        # Add this member's label to use_labels
+
+        push @$use_labels, $use_member->{label};
+
+      }
+
+    }
+   
+    # Look up use names from use labels unless use names 
+    # is set or they didn't send use labels
+
+    unless ($use_names || !$use_labels) {
+
+      # Convert use labels to an array, and 
+      # set use names to an empty array.
+
+      $use_labels = to_array($use_labels);
+      $use_names = to_array();
+
+      # Go through each use label
+
+      foreach my $use_label (@$use_labels) {
+
+        # If this use label isn't found, something went
+        # wrong. Let the user know what's up.
+
+        return $self->{abstract}->report_error("get_reunion failed: use member label '$use_label' not found\n")
+          unless $self->{labels}->{$use_label}->{name};
+
+        # Add this member's name to use_names
+
+        push @$use_names, $self->{labels}->{$use_label}->{name};
+
+      }
+
+    }
+   
+    # Look up ids from use names if they sent use 
+    # names, and key them by name.
+
+    if ($use_names) {
+
+      foreach my $use_name (@$use_names) {
+
+        # If this member has stuff set and its not
+        # to be ignored, use its selected ids.
+
+        $ids->{$use_name} = $self->{names}->{$use_name}->{chosen_ids_string} 
+          if (($self->{names}->{$use_name}->{chosen_count} > 0) && !$self->{names}->{$use_name}->{ignore});
+
+      }
 
     }
 
+  } else {
+   
+    # Look up use name ids from use label ids unless use name
+    # ids is set, or they didn't send use label ids.
+
+    unless ($use_name_ids || !$use_label_ids) {
+
+      # Create the hash to hold the ids keyed by name
+
+      $use_name_ids = to_hash();
+
+      # Go through each use label
+
+      foreach my $use_label (keys %$use_label_ids) {
+
+        # If this use label isn't found, something went
+        # wrong. Let the user know what's up.
+
+        return $self->{abstract}->report_error("get_reunion failed: use member label '$use_label' not found\n")
+          unless $self->{labels}->{$use_label}->{name};
+
+        # Add this member's ids to use_name_ids keyed by name
+
+        $use_name_ids->{$self->{labels}->{$use_label}->{name}} = $use_label_ids->{$use_label};
+
+      }
+
+    }
+   
+    # Set ids to use_name_ids
+
+    $ids = $use_name_ids;
+
   }
- 
+  
   # If the start label isn't found, something went
   # wrong. Let the user know what's up.
 
@@ -2148,10 +2191,10 @@ later in this document to determine the order to use.
 
 If you use the named argument calling style, such as
 
-  $famimly->add_lineage(-parent_name  => 'customer',
-                        -parent_field => 'cust_id',
-                        -child_name   => 'purchase',
-                        -child_field  => 'cust_id');
+  $family->add_lineage(-parent_name  => 'customer',
+                       -parent_field => 'cust_id',
+                       -child_name   => 'purchase',
+                       -child_field  => 'cust_id');
 
 the order does not matter, but the names, and minus signs preceeding them, do.
 You should consult the function defintions later in this document to determine 
@@ -2165,17 +2208,17 @@ dashes for the subsequent ones.
 
 If you use the hashed argument calling style, such as
 
-  $famimly->add_lineage({parent_name  => 'customer',
-                         parent_field => 'cust_id',
-                         child_name   => 'purchase',
-                         child_field  => 'cust_id'});
+  $family->add_lineage({parent_name  => 'customer',
+                        parent_field => 'cust_id',
+                        child_name   => 'purchase',
+                        child_field  => 'cust_id'});
 
 or
 
-  $famimly->add_lineage({-parent_name  => 'customer',
-                         -parent_field => 'cust_id',
-                         -child_name   => 'purchase',
-                         -child_field  => 'cust_id'});
+  $family->add_lineage({-parent_name  => 'customer',
+                        -parent_field => 'cust_id',
+                        -child_name   => 'purchase',
+                        -child_field  => 'cust_id'});
 
 the order does not matter, but the names, and curly braces do, (minus signs are
 optional). You should consult the function defintions later in this document to 
@@ -2627,10 +2670,21 @@ function for all values within the hash.
                                   -group_by    => $group_by,
                                   -order_by    => $order_by);
 
+  $reunion = $family->get_reunion(-data         => $data,
+                                  -use_name_ids => $use_name_ids,
+                                  -group_by     => $group_by,
+                                  -order_by     => $order_by);
+
+  $reunion = $family->get_reunion(-data           => $data,
+                                  -use_label_ids  => $use_label_ids,
+                                  -group_by       => $group_by,
+                                  -order_by       => $order_by);
+
 Returns a report query of the values specified by $data, 
 grouped and ordered by the values specified by $group_by and 
 $order_by, using the chosen ids of members specified by
-$use_names or $use_labels.
+$use_names or $use_labels, or the ids specified by 
+$use_name_ids or $use_label_ids.
 
 B<$data> - 
 Specifies the values by name to be selected in the reunion. 
@@ -2639,6 +2693,11 @@ B<$use_names> or B<$use_labels> -
 Specifies by name or label which members' chosen ids to use 
 in narrowing down the report query. Either can be a comma 
 delimitted string or array reference. 
+
+B<$use_name_ids> or B<$use_label_ids> - 
+Specifies by name or label which ids to use in narrowing down the 
+report query. Must be a hash ref of strings of comma delimitted id 
+values, keyed by name or label. 
 
 B<$group_by> and B<$order_by> - 
 Specifies the values by name to use in the group by and order 
@@ -3255,6 +3314,14 @@ in finder.
 
 =head1 CHANGE LOG
 
+=head2 Relations-Family-0.94
+
+B<Setting Get Reunion IDs>
+
+Added functionality to get_reunion to accept an alternative set of 
+member' ids to use in the reunion query. This was done for the 
+Relations::Report module's Iteration module.
+
 =head2 Relations-Family-0.93
 
 B<Add Member Query Cloning>
@@ -3271,6 +3338,31 @@ This isn't true (even before the above changes). The functions
 require a hash of query pieces (keyed with select, from, etc.) or a
 Relations::Query object. This is because Relations::Family builds on 
 the query and needs the pieces separated to do this.
+
+=head1 TODO LIST
+
+B<Local Listing>
+
+Add functionality to the Member module so that a member can function
+as lookup values for a certain field. This would allow enum fields to 
+be tied to a member, and allow user to select enum field values to 
+narrow down a query. 
+
+B<Names and Labels of Values>
+
+Add a name and label property to the Value modules. This is so Family
+will be more XML compatible since the Value module's current name 
+property can contain spaces and would be ill suited for an ID value 
+since it can contain spaces. Value will then be like Member will a 
+lowercase no spaces name for internals and a anything goes label for
+display purposes.
+
+B<XML Functionality>
+
+Add functionality so that a Family module (and all its kids) can 
+import and export their configuration to XML. This will be useful when 
+the PHP and Java versions of Relations::Family come about. People
+will be able to port from one language to another with little effort.
 
 =head1 OTHER RELATED WORK
 

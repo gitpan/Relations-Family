@@ -811,13 +811,27 @@ $reunion = $finder->get_reunion(-data        => 'Customer,Stuff',
 
 $matrix = $abs->select_matrix(-query => $reunion);
 
-die "Get reunion failed" unless ((scalar @$matrix == 3) and
-                                ($matrix->[0]->{Stuff} == 238) and
-                                ($matrix->[1]->{Stuff} == 12) and
-                                ($matrix->[2]->{Stuff} == 9) and
-                                ($matrix->[0]->{Customer} eq "Last Night Diner") and
-                                ($matrix->[1]->{Customer} eq "Teskaday Print Shop") and
-                                ($matrix->[2]->{Customer} eq "Varney Solutions"));
+die "Get reunion native failed" unless ((scalar @$matrix == 3) and
+                                        ($matrix->[0]->{Stuff} == 238) and
+                                        ($matrix->[1]->{Stuff} == 12) and
+                                        ($matrix->[2]->{Stuff} == 9) and
+                                        ($matrix->[0]->{Customer} eq "Last Night Diner") and
+                                        ($matrix->[1]->{Customer} eq "Teskaday Print Shop") and
+                                        ($matrix->[2]->{Customer} eq "Varney Solutions"));
+
+$reunion = $finder->get_reunion(-data           => 'Customer,Stuff',
+                                -use_label_ids  => {'Customer' => "1,3"},
+                                -group_by       => 'Customer',
+                                -order_by       => 'Stuff desc');
+
+$matrix = $abs->select_matrix(-query => $reunion);
+
+die "Get reunion forced failed" unless ((scalar @$matrix == 2) and
+                                        ($matrix->[0]->{Stuff} == 104) and
+                                        ($matrix->[1]->{Stuff} == 4) and
+                                        ($matrix->[0]->{Customer} eq "Harry's Garage") and
+                                        ($matrix->[1]->{Customer} eq "Simply Flowers"));
+
 
 $abs->run_query("DROP DATABASE IF EXISTS $database") or die "Couldn't drop database: $database";
 
